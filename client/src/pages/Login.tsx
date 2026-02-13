@@ -1,8 +1,8 @@
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod'; // Conecta o Zod ao formulário
-import { Eye, Check, ArrowRight, Loader2 } from 'lucide-react'; // Loader2 para animação
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Eye, Check, ArrowRight, Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { toast } from 'sonner'; // Notificações bonitas
+import { toast } from 'sonner';
 import api from '../services/api';
 import { loginSchema, LoginForm } from '../utils/schemas';
 
@@ -12,33 +12,30 @@ export default function Login() {
   const { 
     register, 
     handleSubmit, 
-    formState: { errors, isSubmitting } // isSubmitting detecta se está carregando
+    formState: { errors, isSubmitting } 
   } = useForm<LoginForm>({
-    resolver: zodResolver(loginSchema) // Aplica as regras do arquivo schemas.ts
+    resolver: zodResolver(loginSchema)
   });
 
   const handleLogin = async (data: LoginForm) => {
     try {
-      // O Axios já joga erro 400/401/500 direto pro catch
       const response = await api.post('/auth/login', data);
       
       // Sucesso
       toast.success(`Bem-vindo, ${response.data.user?.name || 'Atleta'}!`);
       
-      // TODO: Aqui salvaremos o token no Contexto/LocalStorage no próximo passo
+      // TODO: Salvar token no futuro
       // localStorage.setItem('token', response.data.token);
       
-      // Redirecionar (Por enquanto deixamos aqui, depois vai pra Dashboard)
-      // navigate('/dashboard'); 
+      // --- CORREÇÃO AQUI: Linha descomentada para o TypeScript não dar erro ---
+      navigate('/dashboard'); 
 
     } catch (error: any) {
       console.error(error);
-      // Tratamento de erro profissional
+      
       if (error.response) {
-        // Erro que veio do Backend (ex: Senha incorreta)
         toast.error(error.response.data.message || "Credenciais inválidas.");
       } else if (error.request) {
-        // Erro de conexão (Servidor desligado)
         toast.error("Sem conexão com o servidor. Tente novamente mais tarde.");
       } else {
         toast.error("Erro inesperado. Contate o suporte.");
@@ -49,7 +46,7 @@ export default function Login() {
   return (
     <div className="bg-background-dark min-h-screen flex flex-col overflow-x-hidden font-display">
       
-      {/* Header (Mantido igual) */}
+      {/* Header */}
       <header className="flex items-center justify-between border-b border-[#234832] px-6 md:px-20 py-4 w-full z-10 bg-background-dark/90 backdrop-blur-sm">
         <div className="flex items-center gap-3 text-primary">
           <div className="size-8">
@@ -72,7 +69,7 @@ export default function Login() {
 
           <form onSubmit={handleSubmit(handleLogin)} className="flex flex-col gap-5">
             
-            {/* Email com Validação Visual */}
+            {/* Email */}
             <div className="flex flex-col gap-2">
               <label className="text-zinc-200 text-sm font-medium px-1">E-mail</label>
               <input 
@@ -81,12 +78,12 @@ export default function Login() {
                   ${errors.email ? 'border-red-500 focus:ring-red-500' : 'border-input-border focus:border-primary focus:ring-1 focus:ring-primary'}`}
                 placeholder="seu@email.com" 
                 type="email"
-                disabled={isSubmitting} // Trava enquanto carrega
+                disabled={isSubmitting}
               />
               {errors.email && <span className="text-red-400 text-xs px-2">{errors.email.message}</span>}
             </div>
 
-            {/* Senha com Validação Visual */}
+            {/* Senha */}
             <div className="flex flex-col gap-2">
               <label className="text-zinc-200 text-sm font-medium px-1">Senha</label>
               <div className="relative">

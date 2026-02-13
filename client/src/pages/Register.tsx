@@ -4,7 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
 export default function Register() {
-  const { register, handleSubmit, formState: { errors } } = useForm();
+  // --- CORREÇÃO AQUI: Removi "formState: { errors }" pois não estava sendo usado ---
+  const { register, handleSubmit } = useForm();
+  
   const navigate = useNavigate();
 
   const handleRegister = async (data: any) => {
