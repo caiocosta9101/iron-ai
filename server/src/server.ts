@@ -9,36 +9,26 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// --- CONFIGURAÇÃO BLINDADA DO CORS ---
-// Define quem tem permissão para acessar sua API
-const allowedOrigins = [
-  'http://localhost:5173',            // Seu Frontend Local
-  process.env.FRONTEND_URL            // URL do Frontend na Vercel (Vamos configurar isso lá)
-];
-
+// --- CONFIGURAÇÃO DO CORS---
 app.use(cors({
-  origin: (origin, callback) => {
-    // Permite requisições sem origem (como Postman/Insomnia ou Apps Mobile)
-    if (!origin) return callback(null, true);
-    
-    // Verifica se a origem está na lista permitida
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log("Bloqueado pelo CORS:", origin);
-      callback(new Error('Não permitido pelo CORS'));
-    }
-  },
-  credentials: true // Permite envio de cookies/headers de autorização
+  origin: [
+    'http://localhost:5173',                  // Localhost (Vite)
+    'https://iron-ai-web.vercel.app',         // Site Oficial na Vercel
+    process.env.FRONTEND_URL                  // Variável de ambiente (opcional, como backup)
+  ].filter(Boolean) as string[],              // O filtro remove valores vazios/nulos para não dar erro
+  
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],  // Métodos permitidos
+  allowedHeaders: ['Content-Type', 'Authorization'], // Cabeçalhos essenciais
+  credentials: true                           // Permite cookies/sessões se precisar
 }));
-// -------------------------------------
+// -----------------------------------------------------------
 
 app.use(express.json());
 
 // Usa as rotas
 app.use(routes);
 
-// Rota de teste
+// Rota de teste (Health Check)
 app.get('/', async (req, res) => {
   try {
     const result = await pool.query('SELECT NOW()');
