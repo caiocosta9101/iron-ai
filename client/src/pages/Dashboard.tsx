@@ -7,64 +7,53 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 
-// Funções Utilitárias de Data (Brasil)
-const getCurrentDate = () => {
-  const date = new Date();
-  // Formata para: "Segunda-feira, 14 de Outubro"
-  const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' };
-  let formatted = date.toLocaleDateString('pt-BR', options);
-  
-  // Capitaliza a primeira letra (pt-BR retorna minúsculo)
-  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
-};
-
 export const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [userName, setUserName] = useState("Campeão"); // Valor padrão
+  const [userName, setUserName] = useState("Campeão");
   const [currentDate, setCurrentDate] = useState("");
 
-  // Dados simulados (manteremos enquanto não temos endpoints de treino)
   const [activities] = useState([
     { id: 1, name: 'Membros Inferiores B', date: 'Ontem, 16:45', duration: '62 min', volume: '4.250 kg', statusColor: 'bg-[#13ec6a]' },
     { id: 2, name: 'Cardio LISS', date: 'Sábado, 09:00', duration: '45 min', volume: '--', statusColor: 'bg-slate-400' },
     { id: 3, name: 'Costas e Bíceps A', date: 'Sexta, 18:20', duration: '58 min', volume: '3.800 kg', statusColor: 'bg-[#13ec6a]' },
   ]);
 
-  useEffect(() => {
-    // Define a data atual assim que carrega
-    setCurrentDate(GetCurrentDateInfo());
+  // Função única e correta para formatar a data
+  const getFormattedDate = () => {
+    const now = new Date();
+    // Ex: "Segunda-feira, 14 de Outubro"
+    const formatted = new Intl.DateTimeFormat('pt-BR', { 
+      weekday: 'long', 
+      day: 'numeric', 
+      month: 'long' 
+    }).format(now);
+    
+    // Capitaliza a primeira letra (pt-BR retorna minúsculo)
+    return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  };
 
+  useEffect(() => {
+    // 1. Define a data atual
+    setCurrentDate(getFormattedDate());
+
+    // 2. Busca os dados do usuário
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        // Busca o nome do usuário real
         const response = await api.get('/dashboard');
         
         if (response.data && response.data.name) {
-          // Pega apenas o primeiro nome para não ficar gigante
           const firstName = response.data.name.split(' ')[0];
           setUserName(firstName);
         }
       } catch (err) {
         console.error("Erro ao carregar dados:", err);
-        // Mantém "Campeão" se der erro
       } finally {
         setLoading(false);
       }
     };
     fetchDashboardData();
   }, []);
-
-  // Helper para montar a string de data completa com dia da semana
-  function GetCurrentDateInfo() {
-      const now = new Date();
-      // Ex: "Segunda-feira, 14 de Outubro"
-      return new Intl.DateTimeFormat('pt-BR', { 
-        weekday: 'long', 
-        day: 'numeric', 
-        month: 'long' 
-      }).format(now).replace(/^\w/, (c) => c.toUpperCase());
-  }
 
   if (loading) {
     return (
@@ -84,9 +73,7 @@ export const Dashboard: React.FC = () => {
           
           <header className="flex justify-between items-end">
             <div className="space-y-1">
-              {/* NOME DINÂMICO AQUI */}
               <h2 className="text-4xl font-black tracking-tight">Bem-vindo de volta, {userName}!</h2>
-              {/* DATA DINÂMICA AQUI */}
               <p className="text-[#92c9a8] text-lg">{currentDate} • Dia de Superiores</p>
             </div>
           </header>
@@ -110,10 +97,8 @@ export const Dashboard: React.FC = () => {
             </div>
           </section>
 
-          {/* ... Restante do código (Insights e Tabela) permanece igual ... */}
-           {/* Para economizar espaço, mantenha a seção de Insights e Table igual ao anterior */}
-           {/* Apenas copie e cole o final do arquivo anterior aqui */}
-           <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Insights Section */}
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-[#193324] border border-[#326747] p-8 rounded-xl">
                <div className="flex justify-between items-center mb-6">
                   <div className="flex items-center gap-2">
@@ -137,6 +122,7 @@ export const Dashboard: React.FC = () => {
             </div>
           </section>
 
+          {/* Tabela de Atividades */}
           <section className="pb-10">
             <div className="flex items-center gap-3 mb-6">
               <History className="text-[#13ec6a]" size={24} />
@@ -181,6 +167,7 @@ export const Dashboard: React.FC = () => {
   );
 };
 
+// Sub-componentes
 const StatItem = ({ label, value }: { label: string, value: string }) => (
   <div className="flex flex-col">
     <span className="text-[10px] text-[#92c9a8] uppercase tracking-widest">{label}</span>
