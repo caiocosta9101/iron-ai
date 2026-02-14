@@ -54,7 +54,7 @@ export default function Login() {
               <path clipRule="evenodd" d="M12.0799 24L4 19.2479L9.95537 8.75216L18.04 13.4961L18.0446 4H29.9554L29.96 13.4961L38.0446 8.75216L44 19.2479L35.92 24L44 28.7521L38.0446 39.2479L29.96 34.5039L29.9554 44H18.0446L18.04 34.5039L9.95537 39.2479L4 28.7521L12.0799 24Z" fill="currentColor" fillRule="evenodd"></path>
             </svg>
           </div>
-          <h2 className="text-white text-xl font-bold tracking-tight">Treino IA</h2>
+          <h2 className="text-white text-xl font-bold tracking-tight">Iron AI</h2>
         </div>
       </header>
 
@@ -146,7 +146,7 @@ export default function Login() {
       </main>
       
       <footer className="py-6 px-20 border-t border-[#234832] text-center bg-background-dark">
-        <p className="text-zinc-500 text-xs font-medium">© 2026 Iron AI. High Performance Code.</p>
+        <p className="text-zinc-500 text-xs font-medium">© 2026 Iron AI. High Performance Code. Todos os direitos reservados.</p>
       </footer>
     </div>
   );
