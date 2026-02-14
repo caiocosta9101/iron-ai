@@ -25,7 +25,7 @@ export default function Register() {
       <header className="flex items-center justify-between border-b border-[#234832] px-6 md:px-20 py-4 w-full z-10 bg-background-dark/90 backdrop-blur-sm">
         <div className="flex items-center gap-3 text-primary">
           <Dumbbell className="size-8" />
-          <h2 className="text-white text-xl font-bold tracking-tight">Treino IA</h2>
+          <h2 className="text-white text-xl font-bold tracking-tight">Iron AI</h2>
         </div>
       </header>
 
