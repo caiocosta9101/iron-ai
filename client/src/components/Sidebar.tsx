@@ -1,4 +1,5 @@
 // client/src/components/Sidebar.tsx
+import React from 'react'; // <--- ADICIONE ESTA LINHA IMPORTANTE
 import { LayoutDashboard, Dumbbell, Activity, History, Settings, Plus } from 'lucide-react';
 
 export const Sidebar = () => {
@@ -30,6 +31,7 @@ export const Sidebar = () => {
   );
 };
 
+// Agora o React.ReactNode vai funcionar pois importamos o React lá em cima
 const NavItem = ({ icon, label, active = false }: { icon: React.ReactNode, label: string, active?: boolean }) => (
   <a className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
     active ? 'bg-[#13ec6a]/10 text-[#13ec6a] border border-[#13ec6a]/20' : 'text-slate-400 hover:text-white hover:bg-white/5'
