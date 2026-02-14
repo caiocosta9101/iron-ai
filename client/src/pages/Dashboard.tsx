@@ -9,7 +9,7 @@ import api from '../services/api';
 
 export const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [userName, setUserName] = useState("Campeão");
+  const [userName, setUserName] = useState(localStorage.getItem('userName') || "Campeão");
   const [currentDate, setCurrentDate] = useState("");
 
   const [activities] = useState([

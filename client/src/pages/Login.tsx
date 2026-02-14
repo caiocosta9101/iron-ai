@@ -21,13 +21,18 @@ export default function Login() {
     try {
       const response = await api.post('/auth/login', data);
       
+    
+      localStorage.setItem('token', response.data.token);
+
+      
+      if (response.data.user && response.data.user.name) {
+        localStorage.setItem('userName', response.data.user.name);
+      }
+      
       // Sucesso
       toast.success(`Bem-vindo, ${response.data.user?.name || 'Atleta'}!`);
       
-      // TODO: Salvar token no futuro
-      // localStorage.setItem('token', response.data.token);
-      
-      // --- CORREÇÃO AQUI: Linha descomentada para o TypeScript não dar erro ---
+      // Redireciona
       navigate('/dashboard'); 
 
     } catch (error: any) {

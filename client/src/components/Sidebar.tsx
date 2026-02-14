@@ -10,7 +10,7 @@ export const Sidebar = () => {
           <div className="rounded-full size-12 border-2 border-[#13ec6a] bg-slate-700" />
           <div className="flex flex-col">
             <h1 className="text-white text-lg font-bold">Iron AI</h1>
-            <p className="text-[#13ec6a] text-xs font-medium uppercase">Plano Pro</p>
+            
           </div>
         </div>
         
