@@ -2,57 +2,75 @@
 import React, { useEffect, useState } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { 
-  Play, 
-  BrainCircuit, 
-  TrendingUp, 
-  Dumbbell as GymIcon, 
-  Loader2, 
-  History,
-  ArrowUpRight 
+  Play, BrainCircuit, TrendingUp, Dumbbell as GymIcon, 
+  Loader2, History, ArrowUpRight 
 } from 'lucide-react';
 import api from '../services/api';
 
-interface TrainingActivity {
-  id: number;
-  name: string;
-  date: string;
-  duration: string;
-  volume: string;
-  statusColor: string;
-}
+// Funções Utilitárias de Data (Brasil)
+const getCurrentDate = () => {
+  const date = new Date();
+  // Formata para: "Segunda-feira, 14 de Outubro"
+  const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' };
+  let formatted = date.toLocaleDateString('pt-BR', options);
+  
+  // Capitaliza a primeira letra (pt-BR retorna minúsculo)
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+};
 
 export const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [userName, setUserName] = useState("Campeão"); // Valor padrão
+  const [currentDate, setCurrentDate] = useState("");
 
-  const [activities] = useState<TrainingActivity[]>([
+  // Dados simulados (manteremos enquanto não temos endpoints de treino)
+  const [activities] = useState([
     { id: 1, name: 'Membros Inferiores B', date: 'Ontem, 16:45', duration: '62 min', volume: '4.250 kg', statusColor: 'bg-[#13ec6a]' },
     { id: 2, name: 'Cardio LISS', date: 'Sábado, 09:00', duration: '45 min', volume: '--', statusColor: 'bg-slate-400' },
     { id: 3, name: 'Costas e Bíceps A', date: 'Sexta, 18:20', duration: '58 min', volume: '3.800 kg', statusColor: 'bg-[#13ec6a]' },
   ]);
 
   useEffect(() => {
-    const fetchInitialData = async () => {
+    // Define a data atual assim que carrega
+    setCurrentDate(GetCurrentDateInfo());
+
+    const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        // Chama a api para evitar erro de variável não lida
-        await api.get('/auth/me').catch(() => null); 
-        setError(null);
+        // Busca o nome do usuário real
+        const response = await api.get('/dashboard');
+        
+        if (response.data && response.data.name) {
+          // Pega apenas o primeiro nome para não ficar gigante
+          const firstName = response.data.name.split(' ')[0];
+          setUserName(firstName);
+        }
       } catch (err) {
-        console.error("Erro na API:", err);
-        setError("Modo de Simulação Ativo");
+        console.error("Erro ao carregar dados:", err);
+        // Mantém "Campeão" se der erro
       } finally {
-        setTimeout(() => setLoading(false), 600);
+        setLoading(false);
       }
     };
-    fetchInitialData();
+    fetchDashboardData();
   }, []);
+
+  // Helper para montar a string de data completa com dia da semana
+  function GetCurrentDateInfo() {
+      const now = new Date();
+      // Ex: "Segunda-feira, 14 de Outubro"
+      return new Intl.DateTimeFormat('pt-BR', { 
+        weekday: 'long', 
+        day: 'numeric', 
+        month: 'long' 
+      }).format(now).replace(/^\w/, (c) => c.toUpperCase());
+  }
 
   if (loading) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#102217] text-[#13ec6a]">
         <Loader2 className="animate-spin mb-4" size={48} />
-        <p className="font-bold tracking-widest uppercase text-[10px]">Sincronizando Dashboard...</p>
+        <p className="font-bold tracking-widest uppercase text-[10px]">Carregando Perfil...</p>
       </div>
     );
   }
@@ -66,16 +84,12 @@ export const Dashboard: React.FC = () => {
           
           <header className="flex justify-between items-end">
             <div className="space-y-1">
-              <h2 className="text-4xl font-black tracking-tight">Bem-vindo de volta, Campeão!</h2>
-              <p className="text-[#92c9a8] text-lg">Segunda-feira, 14 de Outubro • Dia de Superiores</p>
+              {/* NOME DINÂMICO AQUI */}
+              <h2 className="text-4xl font-black tracking-tight">Bem-vindo de volta, {userName}!</h2>
+              {/* DATA DINÂMICA AQUI */}
+              <p className="text-[#92c9a8] text-lg">{currentDate} • Dia de Superiores</p>
             </div>
           </header>
-
-          {error && (
-            <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 p-2 rounded-lg text-[10px] font-bold uppercase text-center">
-              {error}
-            </div>
-          )}
 
           {/* Hero Card */}
           <section className="bg-[#193324] rounded-xl overflow-hidden border border-white/5 flex flex-col lg:flex-row shadow-2xl">
@@ -96,8 +110,10 @@ export const Dashboard: React.FC = () => {
             </div>
           </section>
 
-          {/* Insights Section - Usando BrainCircuit e TrendingUp */}
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* ... Restante do código (Insights e Tabela) permanece igual ... */}
+           {/* Para economizar espaço, mantenha a seção de Insights e Table igual ao anterior */}
+           {/* Apenas copie e cole o final do arquivo anterior aqui */}
+           <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-[#193324] border border-[#326747] p-8 rounded-xl">
                <div className="flex justify-between items-center mb-6">
                   <div className="flex items-center gap-2">
@@ -121,7 +137,6 @@ export const Dashboard: React.FC = () => {
             </div>
           </section>
 
-          {/* Atividades Recentes - Usando History */}
           <section className="pb-10">
             <div className="flex items-center gap-3 mb-6">
               <History className="text-[#13ec6a]" size={24} />
