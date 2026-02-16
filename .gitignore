@@ -4,3 +4,7 @@ build
 .env
 .DS_Store
 coverage
+# NotebookLM exports
+notebooklm-export/
+bundle-simple.js
+bundle-for-notebooklm.js
