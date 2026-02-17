@@ -1,13 +1,22 @@
 import React from 'react';
 import { LayoutDashboard, Dumbbell, Activity, History, Settings, Plus, X } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom'; 
 
-// Adicionamos tipos para as props de controle do menu mobile
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
 export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
+  const navigate = useNavigate();
+  const location = useLocation(); // Hook para saber em qual URL estamos
+
+  // Função auxiliar para navegar e fechar o menu (no mobile)
+  const handleNavigation = (path: string) => {
+    navigate(path);
+    onClose(); // Fecha o menu mobile se estiver aberto
+  };
+
   return (
     <>
       {/* Overlay Escuro (Só aparece no mobile quando aberto) */}
@@ -44,15 +53,44 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
           </div>
           
           <nav className="flex flex-col gap-2">
-            <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active />
-            <NavItem icon={<Dumbbell size={20} />} label="Meus Treinos" />
-            <NavItem icon={<Activity size={20} />} label="Progresso" />
-            <NavItem icon={<History size={20} />} label="Histórico" />
-            <NavItem icon={<Settings size={20} />} label="Configurações" />
+            <NavItem 
+              icon={<LayoutDashboard size={20} />} 
+              label="Dashboard" 
+              active={location.pathname === '/dashboard'}
+              onClick={() => handleNavigation('/dashboard')}
+            />
+            <NavItem 
+              icon={<Dumbbell size={20} />} 
+              label="Meus Treinos" 
+              active={location.pathname === '/meus-treinos'} // Exemplo de rota futura
+              onClick={() => handleNavigation('/meus-treinos')}
+            />
+            <NavItem 
+              icon={<Activity size={20} />} 
+              label="Progresso" 
+              active={location.pathname === '/progresso'}
+              onClick={() => handleNavigation('/progresso')}
+            />
+            <NavItem 
+              icon={<History size={20} />} 
+              label="Histórico" 
+              active={location.pathname === '/historico'}
+              onClick={() => handleNavigation('/historico')}
+            />
+            <NavItem 
+              icon={<Settings size={20} />} 
+              label="Configurações" 
+              active={location.pathname === '/configuracoes'}
+              onClick={() => handleNavigation('/configuracoes')}
+            />
           </nav>
         </div>
 
-        <button className="w-full flex items-center justify-center gap-2 rounded-full h-12 bg-[#13ec6a] text-[#112218] text-sm font-bold hover:scale-[1.02] transition-transform">
+        {/* Botão NOVO TREINO com ação real */}
+        <button 
+          onClick={() => handleNavigation('/novo-treino')}
+          className="w-full flex items-center justify-center gap-2 rounded-full h-12 bg-[#13ec6a] text-[#112218] text-sm font-bold hover:scale-[1.02] transition-transform hover:shadow-lg hover:shadow-[#13ec6a]/20"
+        >
           <Plus size={20} />
           <span>Novo Treino</span>
         </button>
@@ -61,11 +99,15 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
   );
 };
 
-const NavItem = ({ icon, label, active = false }: { icon: React.ReactNode, label: string, active?: boolean }) => (
-  <a className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-    active ? 'bg-[#13ec6a]/10 text-[#13ec6a] border border-[#13ec6a]/20' : 'text-slate-400 hover:text-white hover:bg-white/5'
-  }`} href="#">
+// Componente NavItem atualizado para usar Button e onClick
+const NavItem = ({ icon, label, active = false, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick: () => void }) => (
+  <button 
+    onClick={onClick}
+    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all w-full text-left ${
+      active ? 'bg-[#13ec6a]/10 text-[#13ec6a] border border-[#13ec6a]/20' : 'text-slate-400 hover:text-white hover:bg-white/5'
+    }`}
+  >
     {icon}
     <p className="text-sm font-medium">{label}</p>
-  </a>
+  </button>
 );
