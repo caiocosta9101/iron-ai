@@ -1,6 +1,7 @@
 // server/src/controllers/dashboardController.ts
 import { Request, Response } from 'express';
 import { supabase } from '../db';
+import jwt from 'jsonwebtoken';
 
 export const getDashboardData = async (req: Request, res: Response) => {
   try {
@@ -10,20 +11,22 @@ export const getDashboardData = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Token não fornecido' });
     }
 
-    // 1. Verifica quem é o usuário logado
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    let userId;
 
-    if (authError || !user) {
-      // Se falhar no Supabase Auth, tenta decodificar ou retorna erro
-      return res.status(401).json({ error: 'Sessão inválida' });
+    // 1. Verifica quem é o usuário logado usando o JWT customizado
+    try {
+      // Valida o token usando a mesma chave secreta do authController.ts
+      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+      userId = decoded.id; // Pega o ID que foi guardado no token
+    } catch (err) {
+      return res.status(401).json({ error: 'Sessão inválida ou expirada. Faça login novamente.' });
     }
 
-    // 2. Busca o nome na tabela 'users' (JEITO PROFISSIONAL: Usar a tabela existente)
-    // Estamos buscando pelo email, pois é o vínculo seguro entre o Login e o Banco
+    // 2. Busca o nome na tabela 'users' usando o ID extraído do token
     const { data: userData, error: dbError } = await supabase
       .from('users') 
       .select('name') 
-      .eq('email', user.email)
+      .eq('id', userId)
       .single();
 
     if (dbError || !userData) {
@@ -31,7 +34,7 @@ export const getDashboardData = async (req: Request, res: Response) => {
       return res.json({ name: 'Campeão' }); // Fallback se não achar
     }
 
-    // Retorna o nome real (Ex: "Caio")
+    // Retorna o nome real
     return res.json({
       name: userData.name || 'Campeão'
     });

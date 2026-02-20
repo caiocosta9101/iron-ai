@@ -1,32 +1,37 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import { pool } from './db';
-import routes from './routes';
+// server/src/server.ts
 
+// 1. CARREGAMENTO DAS VARIÁVEIS DE AMBIENTE (Deve ser a primeira coisa)
+import dotenv from 'dotenv';
 dotenv.config();
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+import express from 'express';
+import cors from 'cors';
+import { pool } from './db'; // [cite: 31]
+import routes from './routes'; // [cite: 30, 31]
 
-// --- CONFIGURAÇÃO DO CORS---
+const app = express();
+
+// 2. AJUSTE DA PORTA: Definida como 3333 para alinhar com o Frontend (Dossiê Técnico)
+const PORT = process.env.PORT || 3333; // 
+
+// --- CONFIGURAÇÃO DO CORS ---
 app.use(cors({
   origin: [
-    'http://localhost:5173',                  // Localhost (Vite)
-    'https://iron-ai-web.vercel.app',         // Site Oficial na Vercel
-    process.env.FRONTEND_URL                  // Variável de ambiente (opcional, como backup)
-  ].filter(Boolean) as string[],              // O filtro remove valores vazios/nulos para não dar erro
+    'http://localhost:5173',               // Localhost (Vite)
+    'https://iron-ai-web.vercel.app',      // Site Oficial na Vercel
+    process.env.FRONTEND_URL               // Variável de ambiente (opcional)
+  ].filter(Boolean) as string[],
   
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],  // Métodos permitidos
-  allowedHeaders: ['Content-Type', 'Authorization'], // Cabeçalhos essenciais
-  credentials: true                           // Permite cookies/sessões se precisar
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'], // Essencial para evitar o erro 401 [cite: 17]
+  credentials: true
 }));
-// -----------------------------------------------------------
+// ----------------------------
 
 app.use(express.json());
 
-// Usa as rotas
-app.use(routes);
+// 3. USO DAS ROTAS (Definidas em routes.ts)
+app.use(routes); // [cite: 31]
 
 // Rota de teste (Health Check)
 app.get('/', async (req, res) => {
@@ -35,7 +40,7 @@ app.get('/', async (req, res) => {
     res.json({ 
       status: 'Online', 
       env: process.env.NODE_ENV || 'development',
-      message: 'Iron AI API rodando na Vercel! 🚀', 
+      message: 'Iron AI API rodando com sucesso! 🚀', 
       db_time: result.rows[0] 
     });
   } catch (error) {
@@ -44,13 +49,12 @@ app.get('/', async (req, res) => {
   }
 });
 
-// Se estiver rodando localmente (NODE_ENV não é production), iniciamos o servidor na porta.
-// Se for na Vercel, nós NÃO rodamos o listen, apenas exportamos o app.
+// 4. LÓGICA DE EXECUÇÃO (Local vs Vercel)
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
-    console.log(`🔥 Servidor rodando localmente na porta ${PORT}`);
+    console.log(`🔥 Servidor Iron AI rodando localmente na porta ${PORT}`);
   });
 }
 
-// Exportamos o app para que a Vercel possa "assumir o controle"
+// Exportação necessária para a Vercel
 export default app;

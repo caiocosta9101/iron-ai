@@ -6,7 +6,9 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
 import NewWorkout from './pages/NewWorkout';
-import AiSetup from './pages/AiSetup'; // <--- Importação da nova página de IA
+import AiSetup from './pages/AiSetup'; 
+import MyWorkouts from './pages/MyWorkouts';
+import WorkoutDetails from './pages/WorkoutDetails'; // <--- IMPORTAÇÃO DA NOVA TELA
 import { AppLayout } from './layouts/AppLayout';
 
 function App() {
@@ -22,6 +24,11 @@ function App() {
         {/* ROTAS PRIVADAS (Com Sidebar/Layout) */}
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
+          
+          <Route path="/meus-treinos" element={<MyWorkouts />} />
+          
+          {/* <--- ROTA ADICIONADA: O ":id" é dinâmico e vai pegar o UUID do banco ---> */}
+          <Route path="/treino/:id" element={<WorkoutDetails />} />
           
           {/* Página de Escolha (Manual vs IA) */}
           <Route path="/novo-treino" element={<NewWorkout />} />
