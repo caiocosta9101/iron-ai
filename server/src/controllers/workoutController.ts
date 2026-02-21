@@ -3,7 +3,8 @@ import { supabase } from '../db';
 import jwt from 'jsonwebtoken';
 
 // === HELPER: Função para limpar e converter dados da IA para o Banco ===
-const parseRepeticoes = (repString: string | number) => {
+const parseRepeticoes = (repString: string | number | undefined) => {
+  if (!repString) return { min: 8, max: 12 }; // Fallback de segurança
   if (typeof repString === 'number') return { min: repString, max: repString };
   const nums = repString.toString().match(/\d+/g);
   if (!nums) return { min: 0, max: 0 };
@@ -11,7 +12,8 @@ const parseRepeticoes = (repString: string | number) => {
   return { min: parseInt(nums[0]), max: parseInt(nums[0]) };
 };
 
-const parseDescanso = (descString: string | number) => {
+const parseDescanso = (descString: string | number | undefined) => {
+  if (!descString) return 60; // Fallback de segurança
   if (typeof descString === 'number') return descString;
   const nums = descString.toString().match(/\d+/g);
   return nums ? parseInt(nums[0]) : 60; 
@@ -19,10 +21,10 @@ const parseDescanso = (descString: string | number) => {
 
 // ===================================================================
 
-// 1. CRIAR TREINO (Salva o JSON da IA no Banco e atualiza o Perfil)
+// 1. CRIAR TREINO (Salva o JSON da IA ou Manual no Banco)
 export const createWorkout = async (req: Request, res: Response) => {
-  // Recebemos o "perfil" completo enviado pelo frontend
-  const { nome, descricao, perfil, dias } = req.body; 
+  // Recebemos os campos extras que o modo manual envia (gerado_por_ia e objetivo top-level)
+  const { nome, descricao, perfil, dias, gerado_por_ia, objetivo } = req.body; 
   
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Token não fornecido. Acesso negado.' });
@@ -39,17 +41,15 @@ export const createWorkout = async (req: Request, res: Response) => {
 
   try {
     // =========================================================
-    // NOVO: SALVAR / ATUALIZAR O PERFIL DO USUÁRIO
+    // SALVAR / ATUALIZAR O PERFIL DO USUÁRIO (Apenas se vier da IA)
     // =========================================================
-    if (perfil) {
-      // 1. Verifica se o usuário já tem um perfil salvo
+    if (perfil && Object.keys(perfil).length > 0) {
       const { data: existingProfile } = await supabase
         .from('perfil_usuario')
         .select('id')
         .eq('usuario_id', userId)
         .single();
 
-      // 2. Prepara os dados formatados conforme sua tabela
       const perfilData = {
         usuario_id: userId,
         objetivo: perfil.objetivo,
@@ -67,19 +67,21 @@ export const createWorkout = async (req: Request, res: Response) => {
       };
 
       if (existingProfile) {
-        // Atualiza se já existir
         await supabase.from('perfil_usuario').update(perfilData).eq('id', existingProfile.id);
       } else {
-        // Cria se for a primeira vez
         await supabase.from('perfil_usuario').insert([perfilData]);
       }
     }
     // =========================================================
 
-    // Continua salvando o treino normalmente (usando perfil.objetivo)
+    // Define de onde pegar o objetivo e o status da IA
+    const objFinal = objetivo || (perfil ? perfil.objetivo : 'Geral');
+    const isIA = gerado_por_ia !== undefined ? gerado_por_ia : true;
+
+    // Salva o Cabeçalho do Treino
     const { data: treinoData, error: treinoError } = await supabase
       .from('treinos')
-      .insert([{ usuario_id: userId, nome, descricao, objetivo: perfil.objetivo, gerado_por_ia: true }])
+      .insert([{ usuario_id: userId, nome, descricao, objetivo: objFinal, gerado_por_ia: isIA }])
       .select()
       .single();
 
@@ -89,55 +91,67 @@ export const createWorkout = async (req: Request, res: Response) => {
     for (const [index, dia] of dias.entries()) {
       const { data: diaData, error: diaError } = await supabase
         .from('dias_treino')
-        .insert([{ treino_id: treinoId, nome: dia.nome, ordem_dia: index + 1, foco: dia.foco }]) // Correção do foco aplicada aqui
+        .insert([{ treino_id: treinoId, nome: dia.nome, ordem_dia: index + 1, foco: dia.foco }]) 
         .select()
         .single();
 
       if (diaError) throw diaError;
 
       for (const [i, exercicio] of dia.exercicios.entries()) {
-        let exercicioId;
+        
+        // 1. Tenta usar o ID direto (Modo Manual)
+        let exercicioId = exercicio.exercicio_id;
 
-        const { data: existingEx } = await supabase
-          .from('exercicios')
-          .select('id')
-          .ilike('nome', exercicio.nome)
-          .single();
-
-        if (existingEx) {
-          exercicioId = existingEx.id;
-        } else {
-          // Correção do equipamento aplicada aqui (Evita o erro "violates not-null constraint")
-          const { data: newEx, error: newExError } = await supabase
+        // 2. Se não tiver ID (Modo IA), busca por nome ou cadastra
+        if (!exercicioId) {
+          const { data: existingEx } = await supabase
             .from('exercicios')
-            .insert([{ 
-              nome: exercicio.nome, 
-              grupo_muscular: dia.foco || 'Geral',
-              equipamento: exercicio.equipamento || 'Não especificado' 
-            }])
-            .select()
+            .select('id')
+            .ilike('nome', exercicio.nome)
             .single();
-          
-          if (newExError) throw newExError;
-          exercicioId = newEx.id;
+
+          if (existingEx) {
+            exercicioId = existingEx.id;
+          } else {
+            const { data: newEx, error: newExError } = await supabase
+              .from('exercicios')
+              .insert([{ 
+                nome: exercicio.nome, 
+                grupo_muscular: dia.foco || 'Geral',
+                equipamento: exercicio.equipamento || 'Não especificado' 
+              }])
+              .select()
+              .single();
+            
+            if (newExError) throw newExError;
+            exercicioId = newEx.id;
+          }
         }
 
-        const reps = parseRepeticoes(exercicio.repeticoes);
-        const descanso = parseDescanso(exercicio.descanso);
+        // 3. Processa Metas (Aceita tanto string da IA quanto número direto do Manual)
+        const repMin = exercicio.repeticoes_min !== undefined ? exercicio.repeticoes_min : parseRepeticoes(exercicio.repeticoes).min;
+        const repMax = exercicio.repeticoes_max !== undefined ? exercicio.repeticoes_max : parseRepeticoes(exercicio.repeticoes).max;
+        const descanso = exercicio.descanso_segundos !== undefined ? exercicio.descanso_segundos : parseDescanso(exercicio.descanso);
 
+        // 4. Salva a relação
         const { error: ligacaoError } = await supabase
           .from('exercicios_treino')
           .insert([{
-            dia_treino_id: diaData.id, exercicio_id: exercicioId, ordem_execucao: i + 1, 
-            series: parseInt(exercicio.series) || 3, repeticoes_min: reps.min, 
-            repeticoes_max: reps.max, descanso_segundos: descanso, observacoes: exercicio.observacao
+            dia_treino_id: diaData.id, 
+            exercicio_id: exercicioId, 
+            ordem_execucao: i + 1, 
+            series: parseInt(exercicio.series) || 3, 
+            repeticoes_min: repMin, 
+            repeticoes_max: repMax, 
+            descanso_segundos: descanso, 
+            observacoes: exercicio.observacao || exercicio.observacoes
           }]);
 
         if (ligacaoError) throw ligacaoError;
       }
     }
 
-    return res.status(201).json({ message: 'Treino e perfil salvos com sucesso!', treinoId });
+    return res.status(201).json({ message: 'Treino salvo com sucesso!', treinoId });
 
   } catch (error: any) {
     console.error('Erro ao salvar treino:', error);
@@ -145,7 +159,7 @@ export const createWorkout = async (req: Request, res: Response) => {
   }
 };
 
-// 2. LISTAR TREINOS (Para a tela "Meus Treinos")
+// 2. LISTAR TREINOS (Mantido intacto)
 export const getUserWorkouts = async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'Token não fornecido.' });
@@ -175,7 +189,7 @@ export const getUserWorkouts = async (req: Request, res: Response) => {
     }
 };
 
-// 3. BUSCAR DETALHES DE UM TREINO ESPECÍFICO
+// 3. BUSCAR DETALHES DE UM TREINO ESPECÍFICO (Atualizado com Equipamento)
 export const getWorkoutById = async (req: Request, res: Response) => {
   const { id } = req.params;
   
@@ -201,7 +215,7 @@ export const getWorkoutById = async (req: Request, res: Response) => {
           id, nome, ordem_dia, observacoes, foco,
           exercicios_treino (
             id, series, repeticoes_min, repeticoes_max, descanso_segundos, observacoes, ordem_execucao,
-            exercicios ( nome )
+            exercicios ( nome, equipamento ) 
           )
         )
       `)
@@ -231,6 +245,7 @@ export const getWorkoutById = async (req: Request, res: Response) => {
             .map((ex: any) => ({
               id: ex.id,
               nome: ex.exercicios.nome, 
+              equipamento: ex.exercicios.equipamento,
               series: ex.series,
               repeticoes_min: ex.repeticoes_min,
               repeticoes_max: ex.repeticoes_max,
@@ -245,5 +260,113 @@ export const getWorkoutById = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Erro ao buscar detalhes do treino:', error);
     return res.status(500).json({ error: 'Erro ao buscar detalhes.' });
+  }
+};
+
+// 4. ATUALIZAR INFORMAÇÕES DO TREINO (Nome, Descrição, Objetivo)
+export const updateWorkout = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { nome, descricao, objetivo } = req.body;
+  
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Acesso negado.' });
+  
+  const token = authHeader.split(' ')[1];
+  let userId;
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+    userId = decoded.id;
+  } catch (err) {
+    return res.status(401).json({ error: 'Sessão inválida.' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('treinos')
+      .update({ nome, descricao, objetivo })
+      .eq('id', id)
+      .eq('usuario_id', userId) // Segurança: só atualiza se for o dono
+      .select()
+      .single();
+
+    if (error) throw error;
+    return res.status(200).json({ message: 'Treino atualizado com sucesso', data });
+  } catch (error: any) {
+    console.error('Erro ao atualizar treino:', error);
+    return res.status(500).json({ error: 'Erro ao atualizar dados.' });
+  }
+};
+
+// 5. DELETAR TREINO INTEIRO (E cascata)
+export const deleteWorkout = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Acesso negado.' });
+  
+  const token = authHeader.split(' ')[1];
+  let userId;
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+    userId = decoded.id;
+  } catch (err) {
+    return res.status(401).json({ error: 'Sessão inválida.' });
+  }
+
+  try {
+    const { error } = await supabase
+      .from('treinos')
+      .delete()
+      .eq('id', id)
+      .eq('usuario_id', userId); // Segurança: só apaga se for o dono
+
+    if (error) throw error;
+    return res.status(200).json({ message: 'Treino deletado com sucesso' });
+  } catch (error: any) {
+    console.error('Erro ao deletar treino:', error);
+    return res.status(500).json({ error: 'Erro ao deletar treino.' });
+  }
+};
+
+// 6. ATUALIZAR EXERCÍCIO ESPECÍFICO (Séries, Reps, Descanso e Substituição)
+export const updateExercise = async (req: Request, res: Response) => {
+  const { id } = req.params; 
+  // ADD O exercicio_id AQUI:
+  const { series, repeticoes_min, repeticoes_max, descanso_segundos, exercicio_id } = req.body;
+
+  try {
+    const { data, error } = await supabase
+      .from('exercicios_treino')
+      // E COLOQUE ELE AQUI NA ATUALIZAÇÃO:
+      .update({ series, repeticoes_min, repeticoes_max, descanso_segundos, exercicio_id })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return res.status(200).json({ message: 'Exercício atualizado com sucesso', data });
+  } catch (error: any) {
+    console.error('Erro ao atualizar exercício:', error);
+    return res.status(500).json({ error: 'Erro ao atualizar exercício.' });
+  }
+};
+
+// 7. REMOVER EXERCÍCIO ESPECÍFICO DE UM DIA
+export const removeExercise = async (req: Request, res: Response) => {
+  const { id } = req.params; // ID da tabela pivot exercicios_treino
+
+  try {
+    const { error } = await supabase
+      .from('exercicios_treino')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    return res.status(200).json({ message: 'Exercício removido com sucesso' });
+  } catch (error: any) {
+    console.error('Erro ao remover exercício:', error);
+    return res.status(500).json({ error: 'Erro ao remover exercício.' });
   }
 };
