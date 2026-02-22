@@ -1,6 +1,6 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { supabase } from '../db';
-import jwt from 'jsonwebtoken';
+import { AuthRequest } from '../middlewares/authMiddleware';
 
 // === HELPER: Função para limpar e converter dados da IA para o Banco ===
 const parseRepeticoes = (repString: string | number | undefined) => {
@@ -22,22 +22,11 @@ const parseDescanso = (descString: string | number | undefined) => {
 // ===================================================================
 
 // 1. CRIAR TREINO (Salva o JSON da IA ou Manual no Banco)
-export const createWorkout = async (req: Request, res: Response) => {
-  // Recebemos os campos extras que o modo manual envia (gerado_por_ia e objetivo top-level)
+export const createWorkout = async (req: AuthRequest, res: Response) => {
   const { nome, descricao, perfil, dias, gerado_por_ia, objetivo } = req.body; 
   
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Token não fornecido. Acesso negado.' });
-
-  const token = authHeader.split(' ')[1];
-  let userId;
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-    userId = decoded.id; 
-  } catch (err) {
-    return res.status(401).json({ error: 'Sessão inválida ou expirada. Faça login novamente.' });
-  }
+  // O middleware já validou e nos entregou o ID aqui!
+  const userId = req.userId; 
 
   try {
     // =========================================================
@@ -74,7 +63,6 @@ export const createWorkout = async (req: Request, res: Response) => {
     }
     // =========================================================
 
-    // Define de onde pegar o objetivo e o status da IA
     const objFinal = objetivo || (perfil ? perfil.objetivo : 'Geral');
     const isIA = gerado_por_ia !== undefined ? gerado_por_ia : true;
 
@@ -99,10 +87,8 @@ export const createWorkout = async (req: Request, res: Response) => {
 
       for (const [i, exercicio] of dia.exercicios.entries()) {
         
-        // 1. Tenta usar o ID direto (Modo Manual)
         let exercicioId = exercicio.exercicio_id;
 
-        // 2. Se não tiver ID (Modo IA), busca por nome ou cadastra
         if (!exercicioId) {
           const { data: existingEx } = await supabase
             .from('exercicios')
@@ -128,12 +114,10 @@ export const createWorkout = async (req: Request, res: Response) => {
           }
         }
 
-        // 3. Processa Metas (Aceita tanto string da IA quanto número direto do Manual)
         const repMin = exercicio.repeticoes_min !== undefined ? exercicio.repeticoes_min : parseRepeticoes(exercicio.repeticoes).min;
         const repMax = exercicio.repeticoes_max !== undefined ? exercicio.repeticoes_max : parseRepeticoes(exercicio.repeticoes).max;
         const descanso = exercicio.descanso_segundos !== undefined ? exercicio.descanso_segundos : parseDescanso(exercicio.descanso);
 
-        // 4. Salva a relação
         const { error: ligacaoError } = await supabase
           .from('exercicios_treino')
           .insert([{
@@ -159,20 +143,9 @@ export const createWorkout = async (req: Request, res: Response) => {
   }
 };
 
-// 2. LISTAR TREINOS (Mantido intacto)
-export const getUserWorkouts = async (req: Request, res: Response) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'Token não fornecido.' });
-    
-    const token = authHeader.split(' ')[1];
-    let userId;
-    
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-      userId = decoded.id; 
-    } catch (err) {
-      return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
-    }
+// 2. LISTAR TREINOS
+export const getUserWorkouts = async (req: AuthRequest, res: Response) => {
+    const userId = req.userId;
   
     try {
       const { data, error } = await supabase
@@ -189,22 +162,10 @@ export const getUserWorkouts = async (req: Request, res: Response) => {
     }
 };
 
-// 3. BUSCAR DETALHES DE UM TREINO ESPECÍFICO (Atualizado com Equipamento)
-export const getWorkoutById = async (req: Request, res: Response) => {
+// 3. BUSCAR DETALHES DE UM TREINO ESPECÍFICO
+export const getWorkoutById = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
-  
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Acesso negado.' });
-  
-  const token = authHeader.split(' ')[1];
-  let userId;
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-    userId = decoded.id;
-  } catch (err) {
-    return res.status(401).json({ error: 'Sessão inválida.' });
-  }
+  const userId = req.userId;
 
   try {
     const { data, error } = await supabase
@@ -264,22 +225,10 @@ export const getWorkoutById = async (req: Request, res: Response) => {
 };
 
 // 4. ATUALIZAR INFORMAÇÕES DO TREINO (Nome, Descrição, Objetivo)
-export const updateWorkout = async (req: Request, res: Response) => {
+export const updateWorkout = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const { nome, descricao, objetivo } = req.body;
-  
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Acesso negado.' });
-  
-  const token = authHeader.split(' ')[1];
-  let userId;
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-    userId = decoded.id;
-  } catch (err) {
-    return res.status(401).json({ error: 'Sessão inválida.' });
-  }
+  const userId = req.userId;
 
   try {
     const { data, error } = await supabase
@@ -299,21 +248,9 @@ export const updateWorkout = async (req: Request, res: Response) => {
 };
 
 // 5. DELETAR TREINO INTEIRO (E cascata)
-export const deleteWorkout = async (req: Request, res: Response) => {
+export const deleteWorkout = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
-  
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Acesso negado.' });
-  
-  const token = authHeader.split(' ')[1];
-  let userId;
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-    userId = decoded.id;
-  } catch (err) {
-    return res.status(401).json({ error: 'Sessão inválida.' });
-  }
+  const userId = req.userId;
 
   try {
     const { error } = await supabase
@@ -331,15 +268,13 @@ export const deleteWorkout = async (req: Request, res: Response) => {
 };
 
 // 6. ATUALIZAR EXERCÍCIO ESPECÍFICO (Séries, Reps, Descanso e Substituição)
-export const updateExercise = async (req: Request, res: Response) => {
+export const updateExercise = async (req: AuthRequest, res: Response) => {
   const { id } = req.params; 
-  // ADD O exercicio_id AQUI:
   const { series, repeticoes_min, repeticoes_max, descanso_segundos, exercicio_id } = req.body;
 
   try {
     const { data, error } = await supabase
       .from('exercicios_treino')
-      // E COLOQUE ELE AQUI NA ATUALIZAÇÃO:
       .update({ series, repeticoes_min, repeticoes_max, descanso_segundos, exercicio_id })
       .eq('id', id)
       .select()
@@ -354,8 +289,8 @@ export const updateExercise = async (req: Request, res: Response) => {
 };
 
 // 7. REMOVER EXERCÍCIO ESPECÍFICO DE UM DIA
-export const removeExercise = async (req: Request, res: Response) => {
-  const { id } = req.params; // ID da tabela pivot exercicios_treino
+export const removeExercise = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params; 
 
   try {
     const { error } = await supabase

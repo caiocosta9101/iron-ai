@@ -1,14 +1,19 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
+import { AuthRequest } from '../middlewares/authMiddleware';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-export const generateWorkout = async (req: Request, res: Response) => {
+// Trocamos Request por AuthRequest para manter o padrão de rotas protegidas
+export const generateWorkout = async (req: AuthRequest, res: Response) => {
   const { objetivo, idade, peso, altura, limitacoes, dias, tempo, nivel } = req.body;
+
+  // Se no futuro você quiser atrelar a geração ao usuário (para limite de uso, por exemplo),
+  // o ID já está disponível aqui, entregue com segurança pelo middleware!
+  // const userId = req.userId;
 
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
     
     // === ATUALIZADO PARA O GEMINI 3 FLASH PREVIEW ===
-    // Baseado no seu print, este é o identificador correto
     const model = genAI.getGenerativeModel({ 
       model: "gemini-3-flash-preview", 
       generationConfig: {

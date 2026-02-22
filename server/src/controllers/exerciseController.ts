@@ -1,9 +1,10 @@
-import { Request, Response } from 'express';
-import { supabase } from '../db'; // [cite: 52, 69]
+import { Response } from 'express';
+import { supabase } from '../db'; 
+import { AuthRequest } from '../middlewares/authMiddleware';
 
-export const getExercises = async (req: Request, res: Response) => {
+export const getExercises = async (req: AuthRequest, res: Response) => {
   try {
-    // Busca todos os exercícios ordenados por nome para facilitar no frontend [cite: 109]
+    // Busca todos os exercícios ordenados por nome para facilitar no frontend
     const { data, error } = await supabase
       .from('exercicios')
       .select('*')
