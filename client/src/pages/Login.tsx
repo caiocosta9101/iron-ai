@@ -39,7 +39,7 @@ export default function Login() {
       console.error(error);
       
       if (error.response) {
-        toast.error(error.response.data.message || "Credenciais inválidas.");
+        toast.error(error.response.data.error || "Credenciais inválidas.");
       } else if (error.request) {
         toast.error("Sem conexão com o servidor. Tente novamente mais tarde.");
       } else {
