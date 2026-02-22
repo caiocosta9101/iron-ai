@@ -4,16 +4,21 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db';
 
-// Validação dos dados que chegam
-const authSchema = z.object({
+// Schemas separados para cada operação
+const registerSchema = z.object({
+  name: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(6),
-  name: z.string().optional() // Opcional no login, obrigatório no registro
+});
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
 });
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { name, email, password } = authSchema.parse(req.body);
+    const { name, email, password } = registerSchema.parse(req.body);
 
     // Criptografa a senha antes de salvar
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -25,15 +30,21 @@ export const register = async (req: Request, res: Response) => {
     );
 
     res.status(201).json(result.rows[0]);
-  } catch (error) {
+  } catch (error: any) {
     console.error(error);
-    res.status(400).json({ error: 'Erro ao criar usuário ou e-mail já existe.' });
+
+    // Trata email duplicado separadamente
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'E-mail já cadastrado.' });
+    }
+
+    res.status(400).json({ error: 'Erro ao criar usuário.' });
   }
 };
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { email, password } = authSchema.parse(req.body);
+    const { email, password } = loginSchema.parse(req.body);
 
     // Busca usuário
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
@@ -45,10 +56,17 @@ export const login = async (req: Request, res: Response) => {
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) return res.status(401).json({ error: 'Credenciais inválidas' });
 
+    // Valida se o JWT_SECRET está configurado no ambiente
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      console.error('JWT_SECRET não configurado no ambiente!');
+      return res.status(500).json({ error: 'Erro interno de configuração.' });
+    }
+
     // Gera Token
     const token = jwt.sign(
       { id: user.id },
-      process.env.JWT_SECRET as string,
+      secret,
       { expiresIn: '8h' }
     );
 

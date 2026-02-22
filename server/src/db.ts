@@ -20,10 +20,13 @@ pool.on('connect', () => {
 
 // --- Conexão 2: Cliente Supabase (Para Auth e funções do SDK) ---
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error('SUPABASE_URL e SUPABASE_KEY são obrigatórios no .env');
+// SEGURANÇA: Exigindo a Service Role Key no lugar da Anon Key
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórios no .env');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// Inicializa o cliente com a chave administrativa
+export const supabase = createClient(supabaseUrl, supabaseServiceKey);

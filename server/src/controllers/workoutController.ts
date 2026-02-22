@@ -139,7 +139,7 @@ export const createWorkout = async (req: AuthRequest, res: Response) => {
 
   } catch (error: any) {
     console.error('Erro ao salvar treino:', error);
-    return res.status(500).json({ error: 'Erro ao persistir dados.', details: error.message });
+    return res.status(500).json({ error: 'Erro interno ao persistir dados.' });
   }
 };
 
@@ -271,8 +271,35 @@ export const deleteWorkout = async (req: AuthRequest, res: Response) => {
 export const updateExercise = async (req: AuthRequest, res: Response) => {
   const { id } = req.params; 
   const { series, repeticoes_min, repeticoes_max, descanso_segundos, exercicio_id } = req.body;
+  const userId = req.userId; // Pegando o ID do usuário autenticado
 
   try {
+    // 1. VALIDAÇÃO DE POSSE (Anti-IDOR)
+    const { data: authCheck, error: authError } = await supabase
+      .from('exercicios_treino')
+      .select(`
+        id,
+        dias_treino (
+          treinos (
+            usuario_id
+          )
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (authError || !authCheck) {
+      return res.status(404).json({ error: 'Exercício não encontrado.' });
+    }
+
+    // Navega pelas relações para checar o dono
+    const donoId = (authCheck as any)?.dias_treino?.treinos?.usuario_id;
+    
+    if (donoId !== userId) {
+      return res.status(403).json({ error: 'Acesso negado. Você não tem permissão para alterar este exercício.' });
+    }
+
+    // 2. UPDATE SEGURO
     const { data, error } = await supabase
       .from('exercicios_treino')
       .update({ series, repeticoes_min, repeticoes_max, descanso_segundos, exercicio_id })
@@ -284,15 +311,41 @@ export const updateExercise = async (req: AuthRequest, res: Response) => {
     return res.status(200).json({ message: 'Exercício atualizado com sucesso', data });
   } catch (error: any) {
     console.error('Erro ao atualizar exercício:', error);
-    return res.status(500).json({ error: 'Erro ao atualizar exercício.' });
+    return res.status(500).json({ error: 'Erro interno ao atualizar exercício.' }); // Mensagem genérica
   }
 };
 
 // 7. REMOVER EXERCÍCIO ESPECÍFICO DE UM DIA
 export const removeExercise = async (req: AuthRequest, res: Response) => {
   const { id } = req.params; 
+  const userId = req.userId; // Pegando o ID do usuário autenticado
 
   try {
+    // 1. VALIDAÇÃO DE POSSE (Anti-IDOR)
+    const { data: authCheck, error: authError } = await supabase
+      .from('exercicios_treino')
+      .select(`
+        id,
+        dias_treino (
+          treinos (
+            usuario_id
+          )
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (authError || !authCheck) {
+      return res.status(404).json({ error: 'Exercício não encontrado.' });
+    }
+
+    const donoId = (authCheck as any)?.dias_treino?.treinos?.usuario_id;
+    
+    if (donoId !== userId) {
+      return res.status(403).json({ error: 'Acesso negado. Você não tem permissão para remover este exercício.' });
+    }
+
+    // 2. DELETE SEGURO
     const { error } = await supabase
       .from('exercicios_treino')
       .delete()
@@ -302,6 +355,6 @@ export const removeExercise = async (req: AuthRequest, res: Response) => {
     return res.status(200).json({ message: 'Exercício removido com sucesso' });
   } catch (error: any) {
     console.error('Erro ao remover exercício:', error);
-    return res.status(500).json({ error: 'Erro ao remover exercício.' });
+    return res.status(500).json({ error: 'Erro interno ao remover exercício.' }); // Mensagem genérica
   }
 };

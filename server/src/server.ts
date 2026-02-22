@@ -6,13 +6,20 @@ dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
-import { pool } from './db'; // [cite: 31]
-import routes from './routes'; // [cite: 30, 31]
+import helmet from 'helmet'; // <-- Adicionado para segurança de cabeçalhos HTTP
+import rateLimit from 'express-rate-limit'; // <-- Adicionado para proteção contra força bruta na autenticação
+
+import { pool } from './db'; 
+import routes from './routes'; 
 
 const app = express();
 
 // 2. AJUSTE DA PORTA: Definida como 3333 para alinhar com o Frontend (Dossiê Técnico)
-const PORT = process.env.PORT || 3333; // 
+const PORT = process.env.PORT || 3333; 
+
+// --- PROTEÇÃO COM HELMET (Deve vir antes das outras configurações) ---
+app.use(helmet());
+// ---------------------------------------------------------------------
 
 // --- CONFIGURAÇÃO DO CORS ---
 app.use(cors({
@@ -23,15 +30,28 @@ app.use(cors({
   ].filter(Boolean) as string[],
   
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'], // Essencial para evitar o erro 401 [cite: 17]
+  allowedHeaders: ['Content-Type', 'Authorization'], 
   credentials: true
 }));
 // ----------------------------
 
 app.use(express.json());
 
+// --- LIMITADOR DE REQUISIÇÕES (Rate Limiting para Login) ---
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 5, // Limita a 5 tentativas por IP
+  message: { error: 'Muitas tentativas de acesso. Por favor, tente novamente em 15 minutos.' },
+  standardHeaders: true, // Retorna os headers de rate limit no padrão `RateLimit-*`
+  legacyHeaders: false, // Desabilita os headers antigos `X-RateLimit-*`
+});
+
+// Aplica a proteção de força bruta apenas na rota de login ANTES de carregar o routes.ts
+app.use('/auth/login', loginLimiter);
+// -----------------------------------------------------------
+
 // 3. USO DAS ROTAS (Definidas em routes.ts)
-app.use(routes); // [cite: 31]
+app.use(routes); 
 
 // Rota de teste (Health Check)
 app.get('/', async (req, res) => {
