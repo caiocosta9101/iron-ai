@@ -1,7 +1,6 @@
 import { Response } from 'express';
 import { supabase } from '../db'; 
 import { AuthRequest } from '../middlewares/authMiddleware';
-
 export const getExercises = async (req: AuthRequest, res: Response) => {
   try {
     // Busca todos os exercícios ordenados por nome para facilitar no frontend

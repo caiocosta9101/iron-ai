@@ -44,7 +44,12 @@ export default function AiSetup() {
         toast.loading("A IA está analisando sua biometria e ambiente de treino...", { id: 'ia-toast' });
 
         // 1. Chamada Real ao Backend para gerar o treino (Envia tudo para o Gemini)
-        const response = await api.post('/workouts/generate', answers);
+        const response = await api.post('/workouts/generate', {
+            ...answers,
+            idade: Number(answers.idade),
+            peso: Number(answers.peso),
+            altura: Number(answers.altura),
+            });
         const treinoGerado = response.data;
         console.log("Payload recebido do Gemini:", treinoGerado);
 
@@ -53,8 +58,13 @@ export default function AiSetup() {
         // 2. O ELO PERDIDO: Junta a resposta da IA com o perfil completo do usuário
         const payloadParaBanco = {
             ...treinoGerado,
-            perfil: answers 
-        };
+            perfil: {
+                ...answers,
+                idade: Number(answers.idade),
+                peso: Number(answers.peso),
+                altura: Number(answers.altura),
+            }
+            };
 
         // 3. Salva o treino completo no Banco de Dados
         await api.post('/workouts', payloadParaBanco);
