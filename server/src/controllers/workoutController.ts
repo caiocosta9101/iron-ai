@@ -1,3 +1,4 @@
+// server/src/controllers/workoutController.ts
 import { Response } from 'express';
 import { supabase } from '../db';
 import { AuthRequest } from '../middlewares/authMiddleware';
@@ -356,5 +357,57 @@ export const removeExercise = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('Erro ao remover exercício:', error);
     return res.status(500).json({ error: 'Erro interno ao remover exercício.' }); // Mensagem genérica
+  }
+};
+
+// 8. NOVO: BUSCAR DETALHES DE UM "DIA DE TREINO" ESPECÍFICO (Para o modo ACTIVE)
+export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params; // ID do 'dias_treino'
+
+    // Buscamos o Dia + Os Exercícios configurados para ele + Detalhes do exercício (nome)
+    const { data: dayDetails, error } = await supabase
+      .from('dias_treino')
+      .select(`
+        id,
+        nome,
+        foco,
+        observacoes,
+        exercicios_treino (
+          id,
+          series,
+          repeticoes_min,
+          repeticoes_max,
+          descanso_segundos,
+          observacoes,
+          ordem_execucao,
+          exercicios (
+            id,
+            nome,
+            grupo_muscular,
+            equipamento
+          )
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (error || !dayDetails) {
+      return res.status(404).json({ error: 'Dia de treino não encontrado' });
+    }
+
+    // Ordenamos os exercícios pela ordem de execução correta
+    const sortedExercises = dayDetails.exercicios_treino.sort((a: any, b: any) => 
+      a.ordem_execucao - b.ordem_execucao
+    );
+
+    return res.json({
+      ...dayDetails,
+      exercicios_treino: sortedExercises
+    });
+
+  } catch (error) {
+    console.error('Erro ao buscar detalhes do dia:', error);
+    return res.status(500).json({ error: 'Erro interno' });
   }
 };

@@ -1,3 +1,4 @@
+// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 
@@ -8,7 +9,9 @@ import { Dashboard } from './pages/Dashboard';
 import NewWorkout from './pages/NewWorkout';
 import AiSetup from './pages/AiSetup'; 
 import MyWorkouts from './pages/MyWorkouts';
-import WorkoutDetails from './pages/WorkoutDetails'; // <--- IMPORTAÇÃO DA NOVA TELA
+import WorkoutDetails from './pages/WorkoutDetails';
+import ActiveWorkout from './pages/ActiveWorkout';
+import RedirectToActive from './pages/RedirectToActive'; // <--- IMPORT NOVO
 import { AppLayout } from './layouts/AppLayout';
 
 function App() {
@@ -25,16 +28,24 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           
-          <Route path="/meus-treinos" element={<MyWorkouts />} />
+          {/* Listagem de Treinos */}
+          <Route path="/my-workouts" element={<MyWorkouts />} />
           
-          {/* <--- ROTA ADICIONADA: O ":id" é dinâmico e vai pegar o UUID do banco ---> */}
-          <Route path="/treino/:id" element={<WorkoutDetails />} />
+          {/* Visualização de Detalhes do Treino */}
+          <Route path="/workout/:id" element={<WorkoutDetails />} />
+
+          {/* Tela de Execução (Modo Ativo / Checklist) */}
+          <Route path="/workout/active/:id" element={<ActiveWorkout />} />
+          
+          {/* <--- NOVA ROTA MÁGICA ---> */}
+          {/* Ao acessar /active, o sistema calcula qual é o treino de hoje e redireciona */}
+          <Route path="/active" element={<RedirectToActive />} />
           
           {/* Página de Escolha (Manual vs IA) */}
-          <Route path="/novo-treino" element={<NewWorkout />} />
+          <Route path="/new-workout" element={<NewWorkout />} />
           
-          {/* Página do Wizard da IA (Formulário Passo-a-Passo) */}
-          <Route path="/novo-treino/ia" element={<AiSetup />} />
+          {/* Página do Wizard da IA */}
+          <Route path="/new-workout/ai" element={<AiSetup />} />
         </Route>
       </Routes>
     </BrowserRouter>

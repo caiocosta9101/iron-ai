@@ -1,24 +1,42 @@
+// client/src/pages/Dashboard.tsx
 import React, { useEffect, useState } from 'react';
 import { 
   Play, BrainCircuit, TrendingUp, Dumbbell as GymIcon, 
-  Loader2, History, ArrowUpRight, CheckCircle2, XCircle 
+  Loader2, History, ArrowUpRight, CheckCircle2, XCircle, 
+  Calendar, Zap 
 } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom'; // <--- Necessário para receber os dados
-import { toast } from 'sonner'; // <--- Necessário para feedback
+import { useLocation, useNavigate } from 'react-router-dom'; 
+import { toast } from 'sonner'; 
 import api from '../services/api';
+
+// Tipagem do que vem do Backend (DashboardController)
+interface DashboardData {
+  name: string;
+  nextSession: {
+    id: string;
+    programName: string;
+    name: string;
+    focus: string;
+    estimatedTime: number;
+    intensity: string;
+  } | null;
+}
 
 export const Dashboard: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   
-  // 1. Detecta se a IA mandou um treino novo pra cá
+  // 1. Detecta se a IA mandou um treino novo pra cá (Fluxo de Criação)
   const newWorkoutFromAI = location.state?.newWorkout;
 
   const [loading, setLoading] = useState(false);
-  const [userName, setUserName] = useState(localStorage.getItem('userName') || "Campeão");
+  const [userName, setUserName] = useState("Campeão");
   const [currentDate, setCurrentDate] = useState("");
+  
+  // State para o "Próximo Treino da Fila" vindo do Backend
+  const [nextWorkout, setNextWorkout] = useState<DashboardData['nextSession']>(null);
 
-  // Dados Mockados (Mantidos conforme seu original)
+  // Dados Mockados de Histórico (Manteremos visuais por enquanto até ligarmos essa parte)
   const [activities] = useState([
     { id: 1, name: 'Membros Inferiores B', date: 'Ontem, 16:45', duration: '62 min', volume: '4.250 kg', statusColor: 'bg-[#13ec6a]' },
     { id: 2, name: 'Cardio LISS', date: 'Sábado, 09:00', duration: '45 min', volume: '--', statusColor: 'bg-slate-400' },
@@ -26,7 +44,7 @@ export const Dashboard: React.FC = () => {
   ]);
 
   useEffect(() => {
-    // Formata Data
+    // 1. Formata Data
     const now = new Date();
     const formatted = new Intl.DateTimeFormat('pt-BR', { 
       weekday: 'long', 
@@ -35,47 +53,64 @@ export const Dashboard: React.FC = () => {
     }).format(now);
     setCurrentDate(formatted.charAt(0).toUpperCase() + formatted.slice(1));
 
-    // Busca nome do usuário (apenas se não tiver carregando preview, opcional)
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        const response = await api.get('/dashboard');
-        if (response.data && response.data.name) {
-          const firstName = response.data.name.split(' ')[0];
-          setUserName(firstName);
+        
+        // 2. Busca tudo numa única chamada ao Controller inteligente
+        const response = await api.get<DashboardData>('/dashboard');
+        
+        if (response.data) {
+          setUserName(response.data.name);
+          setNextWorkout(response.data.nextSession);
         }
+
       } catch (err) {
         console.error("Erro ao carregar dados:", err);
+        toast.error("Erro ao sincronizar dashboard.");
       } finally {
         setLoading(false);
       }
     };
-    fetchDashboardData();
-  }, []);
 
-  // --- FUNÇÃO PARA SALVAR O TREINO ---
+    // Só busca se não estivermos no modo "Review de IA"
+    if (!newWorkoutFromAI) {
+      fetchDashboardData();
+    }
+  }, [newWorkoutFromAI]);
+
+  // --- FUNÇÃO PARA INICIAR TREINO ---
+  const handleStartWorkout = () => {
+    if (nextWorkout?.id) {
+        // Navega para a tela de Execução (ActiveWorkout) com o ID correto
+        // Nota: Ajustei a rota para o padrão em inglês que estamos usando nos arquivos novos
+        navigate(`/workout/active/${nextWorkout.id}`);
+    } else {
+        toast.error("Nenhum treino configurado.");
+        navigate('/new-workout'); // Redireciona para criar se não tiver
+    }
+  };
+
+  // --- FUNÇÃO PARA SALVAR O TREINO DA IA ---
   const handleSaveWorkout = () => {
-    // Aqui você enviaria para o backend salvar no banco.
-    // Por enquanto, vamos passar direto para a tela "Meus Treinos"
     toast.success("Plano de treino ativado com sucesso!");
-    
-    navigate('/meus-treinos', { 
+    navigate('/my-workouts', { 
         state: { savedWorkout: newWorkoutFromAI } 
     });
   };
 
-  // --- FUNÇÃO PARA DESCARTAR ---
+  // --- FUNÇÃO PARA DESCARTAR SUGESTÃO ---
   const handleDiscard = () => {
-      // Limpa o state da navegação recarregando a página limpa ou navegando para si mesmo com state vazio
       navigate('/dashboard', { state: {} });
       toast.info("Sugestão descartada.");
+      window.location.reload(); // Recarrega para buscar o dashboard real
   };
 
   if (loading) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center text-[#13ec6a]">
         <Loader2 className="animate-spin mb-4" size={48} />
-        <p className="font-bold tracking-widest uppercase text-[10px]">Carregando Perfil...</p>
+        <p className="font-bold tracking-widest uppercase text-[10px]">Sincronizando Iron AI...</p>
       </div>
     );
   }
@@ -83,21 +118,25 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="space-y-6 lg:space-y-8 animate-in fade-in duration-500 pb-10">
       
+      {/* Cabeçalho */}
       <header className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-end">
         <div className="flex items-center gap-4">
           <div className="space-y-1">
             <h2 className="text-2xl lg:text-4xl font-black tracking-tight text-white">
               Olá, {userName}!
             </h2>
-            <p className="text-[#92c9a8] text-sm lg:text-lg">{currentDate} • {newWorkoutFromAI ? "Nova Sugestão Disponível" : "Dia de Superiores"}</p>
+            <p className="text-[#92c9a8] text-sm lg:text-lg">
+                {currentDate} • {newWorkoutFromAI ? "Nova Sugestão Disponível" : "Foco Total"}
+            </p>
           </div>
         </div>
       </header>
 
-      {/* === LÓGICA CONDICIONAL: SE TIVER TREINO DA IA, MOSTRA O PREVIEW === */}
+      {/* === ÁREA PRINCIPAL === */}
       {newWorkoutFromAI ? (
+        
+        /* === CARTÃO DE PREVIEW DA IA (QUANDO VEM DO WIZARD) === */
         <section className="bg-gradient-to-br from-[#193324] to-[#102217] border border-[#13ec6a] rounded-2xl p-6 lg:p-8 shadow-[0_0_30px_rgba(19,236,106,0.1)] relative overflow-hidden">
-            {/* Badge de IA */}
             <div className="absolute top-0 right-0 bg-[#13ec6a] text-[#112218] text-xs font-bold px-3 py-1 rounded-bl-xl z-10">
                 SUGESTÃO IRON AI
             </div>
@@ -111,7 +150,6 @@ export const Dashboard: React.FC = () => {
                 <p className="text-[#92c9a8] max-w-3xl text-lg">{newWorkoutFromAI.descricao}</p>
             </div>
 
-            {/* Grid dos Dias Gerados */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8 relative z-10">
                 {newWorkoutFromAI.dias.map((dia: any, index: number) => (
                     <div key={index} className="bg-[#112218]/80 border border-[#326747] rounded-xl p-4 hover:border-[#13ec6a]/50 transition-colors">
@@ -126,72 +164,111 @@ export const Dashboard: React.FC = () => {
                                     {ex.nome} <span className="text-xs text-[#92c9a8] opacity-50">({ex.series}x{ex.repeticoes})</span>
                                 </li>
                             ))}
-                            {dia.exercicios.length > 4 && (
-                                <li className="text-xs text-[#13ec6a] font-bold italic">+ {dia.exercicios.length - 4} exercícios</li>
-                            )}
                         </ul>
                     </div>
                 ))}
             </div>
 
-            {/* Botões de Ação */}
             <div className="flex gap-4 relative z-10">
                 <button 
                     onClick={handleSaveWorkout}
                     className="flex-1 md:flex-none bg-[#13ec6a] hover:bg-[#10d460] text-[#102217] px-8 py-4 rounded-full font-black text-lg flex items-center justify-center gap-2 shadow-lg hover:scale-105 transition-all"
                 >
-                    <CheckCircle2 size={24} />
-                    APROVAR E SALVAR
+                    <CheckCircle2 size={24} /> APROVAR E SALVAR
                 </button>
                 <button 
                     onClick={handleDiscard}
                     className="flex-1 md:flex-none border border-red-500/30 text-red-400 hover:bg-red-500/10 px-8 py-4 rounded-full font-bold flex items-center justify-center gap-2 transition-colors"
                 >
-                    <XCircle size={24} />
-                    Descartar
+                    <XCircle size={24} /> Descartar
                 </button>
             </div>
         </section>
+
       ) : (
-        /* === DASHBOARD PADRÃO (SE NÃO TIVER PREVIEW) === */
+
+        /* === DASHBOARD PADRÃO (DIA A DIA) === */
         <>
-            {/* Hero Card */}
-            <section className="bg-[#193324] rounded-xl overflow-hidden border border-white/5 flex flex-col lg:flex-row shadow-2xl">
-                <div className="w-full lg:w-1/3 bg-slate-800 h-48 lg:h-auto relative">
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#193324]" />
+            {/* 1. Hero Card - PRÓXIMO TREINO DA FILA */}
+            <section className="bg-[#193324] rounded-xl overflow-hidden border border-white/5 flex flex-col lg:flex-row shadow-2xl relative">
+                {/* Ícone de Fundo Decorativo */}
+                <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                    <ArrowUpRight size={100} className="text-[#13ec6a]" />
                 </div>
-                <div className="p-6 lg:p-8 flex-1 flex flex-col justify-center gap-4">
-                    <span className="text-[#13ec6a] text-xs font-bold uppercase tracking-widest bg-[#13ec6a]/10 px-3 py-1 rounded-full w-fit">Programado para Hoje</span>
-                    <h3 className="text-2xl lg:text-3xl font-bold text-white">Próximo Treino: Membros Superiores</h3>
+
+                <div className="w-full lg:w-1/3 bg-slate-800 h-48 lg:h-auto relative">
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#112218] to-[#193324]" />
+                    <div className="absolute inset-0 flex items-center justify-center text-[#13ec6a]/20">
+                        <GymIcon size={80} />
+                    </div>
+                </div>
+                
+                <div className="p-6 lg:p-8 flex-1 flex flex-col justify-center gap-4 relative z-10">
+                    <div className="flex items-center gap-3">
+                         <span className="text-[#13ec6a] text-xs font-bold uppercase tracking-widest bg-[#13ec6a]/10 px-3 py-1 rounded-full w-fit">
+                            Próximo na Sequência
+                        </span>
+                        {nextWorkout && (
+                          <span className="text-[#92c9a8] text-xs font-bold uppercase tracking-widest border border-[#92c9a8]/20 px-3 py-1 rounded-full w-fit">
+                            {nextWorkout.programName}
+                          </span>
+                        )}
+                    </div>
+                   
+                    {/* Nome Dinâmico do Treino */}
+                    <div>
+                      <h3 className="text-2xl lg:text-3xl font-bold text-white">
+                          {nextWorkout ? nextWorkout.name : "Nenhum treino ativo"}
+                      </h3>
+                      <p className="text-[#92c9a8] mt-1">
+                        {nextWorkout?.focus || "Crie um plano para começar sua jornada."}
+                      </p>
+                    </div>
                     
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pt-4 border-t border-white/10">
-                    <div className="flex gap-8">
-                        <StatItem label="Duração" value="55 min" />
-                        <StatItem label="Foco" value="Peito & Tríceps" />
-                    </div>
-                    <button className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-[#13ec6a] text-[#112218] rounded-full text-lg font-black hover:scale-105 transition-all shadow-lg shadow-[#13ec6a]/20">
-                        <Play fill="currentColor" size={20} />
-                        <span>Iniciar Agora</span>
-                    </button>
-                    </div>
+                    {nextWorkout ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pt-4 border-t border-white/10">
+                          <div className="flex gap-8">
+                              <StatItem label="Estimativa" value={`${nextWorkout.estimatedTime} min`} icon={<Calendar size={14}/>} />
+                              <StatItem label="Intensidade" value={nextWorkout.intensity} icon={<Zap size={14}/>} />
+                          </div>
+                          
+                          {/* Botão de Ação Principal */}
+                          <button 
+                              onClick={handleStartWorkout}
+                              className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-[#13ec6a] text-[#112218] rounded-full text-lg font-black hover:scale-105 transition-all shadow-lg shadow-[#13ec6a]/20 group"
+                          >
+                              <Play fill="currentColor" size={20} className="group-hover:translate-x-1 transition-transform" />
+                              <span>Iniciar Agora</span>
+                          </button>
+                      </div>
+                    ) : (
+                      <div className="pt-4 border-t border-white/10">
+                         <button 
+                              onClick={() => navigate('/new-workout')}
+                              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full transition-colors"
+                          >
+                              Criar Primeiro Treino
+                          </button>
+                      </div>
+                    )}
                 </div>
             </section>
 
-            {/* Insights Section */}
+            {/* 2. Cards de Insights */}
             <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-[#193324] border border-[#326747] p-6 lg:p-8 rounded-xl">
                     <div className="flex justify-between items-center mb-6">
                         <div className="flex items-center gap-2">
-                        <BrainCircuit className="text-[#13ec6a]" size={24} />
-                        <p className="text-[#92c9a8] text-sm font-medium uppercase tracking-widest">Equilíbrio</p>
+                            <BrainCircuit className="text-[#13ec6a]" size={24} />
+                            <p className="text-[#92c9a8] text-sm font-medium uppercase tracking-widest">Consistência</p>
                         </div>
                         <div className="flex items-center gap-1 text-[#13ec6a] font-bold">
-                        <TrendingUp size={16} />
-                        <span>+5.2%</span>
+                            <TrendingUp size={16} />
+                            <span>Ótima</span>
                         </div>
                     </div>
-                    <div className="h-32 flex items-center justify-center text-slate-600 italic border border-white/5 rounded-lg border-dashed">
-                        [Gráfico de Performance]
+                    <div className="h-32 flex items-center justify-center text-slate-500 italic border border-white/5 rounded-lg border-dashed text-sm">
+                        [Gráfico de Frequência Semanal]
                     </div>
                 </div>
 
@@ -202,11 +279,11 @@ export const Dashboard: React.FC = () => {
                 </div>
             </section>
 
-            {/* Tabela de Atividades */}
+            {/* 3. Tabela de Histórico (Dados Mockados) */}
             <section className="pb-10">
                 <div className="flex items-center gap-3 mb-6">
                     <History className="text-[#13ec6a]" size={24} />
-                    <h2 className="text-xl lg:text-2xl font-bold text-white">Atividades Recentes</h2>
+                    <h2 className="text-xl lg:text-2xl font-bold text-white">Últimas Sessões</h2>
                 </div>
                 
                 <div className="bg-[#193324] rounded-xl border border-white/5 overflow-hidden">
@@ -224,18 +301,18 @@ export const Dashboard: React.FC = () => {
                         <tbody className="divide-y divide-white/5">
                         {activities.map((act) => (
                             <tr key={act.id} className="hover:bg-white/5 transition-all">
-                            <td className="px-6 py-4 font-bold text-sm text-white">
-                                <div className="flex items-center gap-3">
-                                <div className={`w-2 h-2 rounded-full ${act.statusColor}`} />
-                                {act.name}
-                                </div>
-                            </td>
-                            <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.date}</td>
-                            <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.duration}</td>
-                            <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.volume}</td>
-                            <td className="px-6 py-4 text-right">
-                                <ArrowUpRight className="inline text-[#13ec6a]" size={16} />
-                            </td>
+                                <td className="px-6 py-4 font-bold text-sm text-white">
+                                    <div className="flex items-center gap-3">
+                                    <div className={`w-2 h-2 rounded-full ${act.statusColor}`} />
+                                    {act.name}
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.date}</td>
+                                <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.duration}</td>
+                                <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.volume}</td>
+                                <td className="px-6 py-4 text-right">
+                                    <ArrowUpRight className="inline text-[#13ec6a]" size={16} />
+                                </td>
                             </tr>
                         ))}
                         </tbody>
@@ -249,11 +326,14 @@ export const Dashboard: React.FC = () => {
   );
 };
 
-// Componentes auxiliares
-const StatItem = ({ label, value }: { label: string, value: string }) => (
+// Componentes Auxiliares
+const StatItem = ({ label, value, icon }: { label: string, value: string, icon?: React.ReactNode }) => (
   <div className="flex flex-col">
-    <span className="text-[10px] text-[#92c9a8] uppercase tracking-widest">{label}</span>
-    <span className="font-bold text-white">{value}</span>
+    <div className="flex items-center gap-1 mb-1">
+        {icon && <span className="text-[#92c9a8]">{icon}</span>}
+        <span className="text-[10px] text-[#92c9a8] uppercase tracking-widest">{label}</span>
+    </div>
+    <span className="font-bold text-white text-lg">{value}</span>
   </div>
 );
 
