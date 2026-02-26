@@ -140,3 +140,5 @@ const NavItem = ({ icon, label, active = false, onClick }: { icon: React.ReactNo
     <p className="text-sm font-medium">{label}</p>
   </button>
 );
+//forca atualizacao
+
