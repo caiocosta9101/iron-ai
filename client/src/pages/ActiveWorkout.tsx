@@ -1,5 +1,5 @@
 // client/src/pages/ActiveWorkout.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Timer, CircleCheck, Circle, 
