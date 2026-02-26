@@ -129,7 +129,7 @@ export default function NewWorkout() {
           </div>
 
           <div 
-            onClick={() => navigate('/novo-treino/ia')} 
+            onClick={() => navigate('/new-workout/ai')} 
             className="group relative flex flex-col justify-between h-[320px] p-8 rounded-3xl bg-gradient-to-br from-[#193324] to-purple-900/40 border border-purple-500/20 hover:border-purple-500 transition-all duration-300 cursor-pointer hover:shadow-2xl hover:shadow-purple-900/20 overflow-hidden"
           >
             <div className="absolute top-0 right-0 bg-purple-600 text-white text-xs font-bold px-4 py-2 rounded-bl-2xl flex items-center gap-2"><Sparkles size={12} fill="currentColor" />IA BETA</div>
