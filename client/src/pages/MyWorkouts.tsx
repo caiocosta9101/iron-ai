@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Dumbbell, ChevronRight,Plus,Loader2 } from 'lucide-react';
+import { Dumbbell, ChevronRight, Plus, Loader2 } from 'lucide-react';
 import api from '../services/api';
 
 // Definição simples do tipo para o TypeScript não reclamar
@@ -43,7 +43,7 @@ export default function MyWorkouts() {
             <p className="text-[#92c9a8]">Gerencie suas rotinas e periodizações.</p>
         </div>
         <button 
-            onClick={() => navigate('/novo-treino')}
+            onClick={() => navigate('/new-workout')} /* <--- CORRIGIDO AQUI ---> */
             className="bg-[#13ec6a] hover:bg-[#10d460] text-[#102217] px-6 py-3 rounded-full font-bold shadow-lg shadow-[#13ec6a]/20 transition-all hover:scale-105 flex items-center gap-2"
         >
             <Plus size={20} />
@@ -62,7 +62,7 @@ export default function MyWorkouts() {
       {!loading && workouts.length === 0 && (
          <div className="py-20 text-center border border-dashed border-[#326747] rounded-2xl bg-[#112218]/50">
             <p className="text-[#92c9a8] mb-4">Você ainda não tem nenhum treino montado.</p>
-            <button onClick={() => navigate('/novo-treino')} className="text-white underline font-bold">
+            <button onClick={() => navigate('/new-workout')} className="text-white underline font-bold"> {/* <--- CORRIGIDO AQUI ---> */}
                 Começar agora
             </button>
          </div>
@@ -74,7 +74,7 @@ export default function MyWorkouts() {
         {!loading && workouts.map((treino) => (
             <div 
                 key={treino.id} 
-                onClick={() => navigate(`/treino/${treino.id}`)} // <--- CLIQUE ADICIONADO AQUI
+                onClick={() => navigate(`/workout/${treino.id}`)} /* <--- O CULPADO DA TELA PRETA CORRIGIDO AQUI ---> */
                 className="bg-[#193324] border border-[#13ec6a]/30 rounded-2xl p-6 relative group hover:border-[#13ec6a] hover:shadow-[0_0_20px_rgba(19,236,106,0.1)] transition-all cursor-pointer"
             >
 

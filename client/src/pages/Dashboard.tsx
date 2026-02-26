@@ -82,12 +82,10 @@ export const Dashboard: React.FC = () => {
   // --- FUNÇÃO PARA INICIAR TREINO ---
   const handleStartWorkout = () => {
     if (nextWorkout?.id) {
-        // Navega para a tela de Execução (ActiveWorkout) com o ID correto
-        // Nota: Ajustei a rota para o padrão em inglês que estamos usando nos arquivos novos
         navigate(`/workout/active/${nextWorkout.id}`);
     } else {
         toast.error("Nenhum treino configurado.");
-        navigate('/new-workout'); // Redireciona para criar se não tiver
+        navigate('/new-workout'); 
     }
   };
 
@@ -103,7 +101,7 @@ export const Dashboard: React.FC = () => {
   const handleDiscard = () => {
       navigate('/dashboard', { state: {} });
       toast.info("Sugestão descartada.");
-      window.location.reload(); // Recarrega para buscar o dashboard real
+      window.location.reload(); 
   };
 
   if (loading) {
@@ -152,22 +150,40 @@ export const Dashboard: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8 relative z-10">
                 {newWorkoutFromAI.dias.map((dia: any, index: number) => (
-                    <div key={index} className="bg-[#112218]/80 border border-[#326747] rounded-xl p-4 hover:border-[#13ec6a]/50 transition-colors">
-                        <div className="flex justify-between items-center mb-3 border-b border-white/5 pb-2">
+                    <div key={index} className="bg-[#112218]/80 border border-[#326747] rounded-xl p-4 hover:border-[#13ec6a]/50 transition-colors flex flex-col max-h-[350px]">
+                        <div className="flex justify-between items-center mb-3 border-b border-white/5 pb-2 shrink-0">
                             <span className="font-bold text-white">{dia.nome}</span>
                             <span className="text-[10px] bg-[#13ec6a]/20 text-[#13ec6a] px-2 py-1 rounded uppercase font-bold">{dia.foco || "Geral"}</span>
                         </div>
-                        <ul className="space-y-2">
-                            {dia.exercicios.slice(0, 4).map((ex: any, idx: number) => (
-                                <li key={idx} className="text-sm text-zinc-400 flex items-center gap-2">
-                                    <div className="w-1 h-1 bg-[#13ec6a] rounded-full" />
-                                    {ex.nome} <span className="text-xs text-[#92c9a8] opacity-50">({ex.series}x{ex.repeticoes})</span>
-                                </li>
-                            ))}
-                        </ul>
+                        
+                        {/* Scroll Container adicionado aqui */}
+                        <div className="overflow-y-auto pr-2 custom-scrollbar">
+                            <ul className="space-y-3">
+                                {/* O slice(0, 4) foi removido! */}
+                                {dia.exercicios.map((ex: any, idx: number) => (
+                                    <li key={idx} className="text-sm text-zinc-300 flex items-start gap-2 border-b border-white/5 pb-2 last:border-0">
+                                        <div className="w-1.5 h-1.5 bg-[#13ec6a] rounded-full mt-1.5 shrink-0" />
+                                        <div>
+                                            <span className="font-semibold block">{ex.nome}</span>
+                                            <span className="text-xs text-[#92c9a8] opacity-70">
+                                                {ex.series} séries de {ex.repeticoes} reps
+                                            </span>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     </div>
                 ))}
             </div>
+
+            {/* Estilo embutido pro scrollbar fininho no preview */}
+            <style>{`
+                .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(19, 236, 106, 0.2); border-radius: 10px; }
+                .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(19, 236, 106, 0.5); }
+            `}</style>
 
             <div className="flex gap-4 relative z-10">
                 <button 
