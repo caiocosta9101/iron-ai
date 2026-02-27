@@ -69,7 +69,7 @@ export default function ActiveWorkout() {
                     : `${ex.repeticoes_min}-${ex.repeticoes_max}`;
 
                 return {
-                    id: ex.id,
+                    id: ex.exercicios.id, // <--- CORREÇÃO: Pegando o ID de dentro do objeto aninhado!
                     nome: ex.exercicios.nome, 
                     seriesAlvo: ex.series || 3,
                     repsAlvo: repsString,
