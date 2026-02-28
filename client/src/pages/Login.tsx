@@ -23,10 +23,11 @@ export default function Login() {
       
     
       localStorage.setItem('token', response.data.token);
+      localStorage.setItem('token_expiry', String(Date.now() + 8 * 60 * 60 * 1000)); // 8h (igual ao backend)
 
-      
       if (response.data.user && response.data.user.name) {
         localStorage.setItem('userName', response.data.user.name);
+        localStorage.setItem('userId', response.data.user.id);
       }
       
       // Sucesso

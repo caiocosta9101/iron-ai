@@ -8,7 +8,8 @@ import {
   Settings, 
   Plus, 
   X,
-  PlayCircle // <--- Ícone novo para o "Treinar Agora"
+  PlayCircle,
+  LogOut
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom'; 
 
@@ -24,6 +25,15 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
   const handleNavigation = (path: string) => {
     navigate(path);
     onClose(); 
+  };
+
+  const handleLogout = () => {
+    // Limpa todos os dados de sessão do localStorage
+    localStorage.removeItem('token');
+    localStorage.removeItem('token_expiry');
+    localStorage.removeItem('userName');
+    localStorage.removeItem('userId');
+    navigate('/login');
   };
 
   return (
@@ -53,7 +63,6 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="rounded-full size-12 border-2 border-[#13ec6a] bg-slate-700 overflow-hidden relative">
-                 {/* Placeholder de avatar ou logo */}
                  <div className="absolute inset-0 bg-[#13ec6a]/20 flex items-center justify-center text-[#13ec6a] font-bold">I</div>
               </div>
               <div className="flex flex-col">
@@ -74,20 +83,16 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
               active={location.pathname === '/dashboard'}
               onClick={() => handleNavigation('/dashboard')}
             />
-
-            {/* --- NOVO BOTÃO DE ATALHO PARA O TREINO ATUAL --- */}
             <NavItem 
               icon={<PlayCircle size={20} />} 
               label="Atividade (Treinar)" 
-              // Fica ativo se estiver na rota mágica ou já dentro do treino
               active={location.pathname === '/active' || location.pathname.includes('/workout/active')}
               onClick={() => handleNavigation('/active')}
             />
-
             <NavItem 
               icon={<Dumbbell size={20} />} 
               label="Meus Treinos" 
-              active={location.pathname === '/my-workouts'} // Atualizado para bater com App.tsx
+              active={location.pathname === '/my-workouts'}
               onClick={() => handleNavigation('/my-workouts')}
             />
             <NavItem 
@@ -111,14 +116,26 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
           </nav>
         </div>
 
-        {/* Botão NOVO TREINO */}
-        <button 
-          onClick={() => handleNavigation('/new-workout')} // Atualizado para bater com App.tsx
-          className="w-full flex items-center justify-center gap-2 rounded-full h-12 bg-[#13ec6a] text-[#112218] text-sm font-bold hover:scale-[1.02] transition-transform hover:shadow-lg hover:shadow-[#13ec6a]/20"
-        >
-          <Plus size={20} />
-          <span>Novo Treino</span>
-        </button>
+        {/* Rodapé da Sidebar */}
+        <div className="flex flex-col gap-3">
+          {/* Botão NOVO TREINO */}
+          <button 
+            onClick={() => handleNavigation('/new-workout')}
+            className="w-full flex items-center justify-center gap-2 rounded-full h-12 bg-[#13ec6a] text-[#112218] text-sm font-bold hover:scale-[1.02] transition-transform hover:shadow-lg hover:shadow-[#13ec6a]/20"
+          >
+            <Plus size={20} />
+            <span>Novo Treino</span>
+          </button>
+
+          {/* Botão SAIR */}
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 rounded-full h-12 border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/10 hover:border-red-500/60 transition-all"
+          >
+            <LogOut size={18} />
+            <span>Sair</span>
+          </button>
+        </div>
       </aside>
     </>
   );
@@ -140,5 +157,4 @@ const NavItem = ({ icon, label, active = false, onClick }: { icon: React.ReactNo
     <p className="text-sm font-medium">{label}</p>
   </button>
 );
-//forca atualizacao
 
