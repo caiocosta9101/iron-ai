@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Timer, CircleCheck, Circle, 
-  Play, Pause, Save, Loader2, Clock, Dumbbell, MessageSquarePlus 
+  Play, Pause, Save, Loader2, Clock, Dumbbell, MessageSquarePlus, Square 
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../services/api';
@@ -34,6 +34,7 @@ export default function ActiveWorkout() {
   // Estados Gerais
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isWorkoutStarted, setIsWorkoutStarted] = useState(false); // <--- Adicionado aqui
   const [workoutName, setWorkoutName] = useState(""); 
   const [exercicios, setExercicios] = useState<ExercicioExecucao[]>([]);
   
@@ -50,6 +51,45 @@ export default function ActiveWorkout() {
     const fetchWorkoutDetails = async () => {
         try {
             if (!id) return;
+
+            // NOVA LÓGICA: Verifica se existe um treino salvo em andamento
+            const savedSession = localStorage.getItem(`iron_ai_workout_progress_${id}`);
+            
+            if (savedSession) {
+                const data = JSON.parse(savedSession);
+                
+                // Calcula exatamente quantos segundos a tela ficou fechada
+                const segundosAusente = data.lastUpdateTimestamp 
+                    ? Math.floor((Date.now() - data.lastUpdateTimestamp) / 1000) 
+                    : 0;
+
+                setWorkoutName(data.savedName);
+                setExercicios(data.savedExercicios);
+                
+                // Soma o tempo ausente ao tempo total do treino
+                setTempoTotal((data.savedTime || 0) + segundosAusente);
+                
+                // Restaura o descanso e soma o tempo ausente, se estivesse rodando
+                if (data.savedTimerDescansoAtivo) {
+                    setTimerDescansoAtivo(true);
+                    setTempoDescanso((data.savedTempoDescanso || 0) + segundosAusente);
+                } else {
+                    setTimerDescansoAtivo(false);
+                    setTempoDescanso(data.savedTempoDescanso || 0);
+                }
+
+                if (data.savedLastSerie) {
+                    lastSerieRef.current = data.savedLastSerie;
+                }
+
+                // A MÁGICA ESTÁ AQUI: Avisa que o treino já tinha sido iniciado
+                setIsWorkoutStarted(true); 
+                
+                setLoading(false);
+                return; // Sai da função
+            }
+
+            // LÓGICA ORIGINAL: Se não tem salvo, busca do banco vazio
             const response = await api.get(`/workouts/day/${id}`);
             const diaTreino = response.data;
 
@@ -69,7 +109,7 @@ export default function ActiveWorkout() {
                     : `${ex.repeticoes_min}-${ex.repeticoes_max}`;
 
                 return {
-                    id: ex.exercicios.id, // <--- CORREÇÃO: Pegando o ID de dentro do objeto aninhado!
+                    id: ex.exercicios.id,
                     nome: ex.exercicios.nome, 
                     seriesAlvo: ex.series || 3,
                     repsAlvo: repsString,
@@ -80,6 +120,7 @@ export default function ActiveWorkout() {
             });
 
             setExercicios(listaFormatada);
+            setIsWorkoutStarted(false); // Garante que começa como false para treinos novos
 
         } catch (error) {
             console.error("Erro ao carregar treino:", error);
@@ -95,9 +136,13 @@ export default function ActiveWorkout() {
 
   // --- CRONÔMETROS ---
   useEffect(() => {
-    const interval = setInterval(() => setTempoTotal(prev => prev + 1), 1000);
+    let interval: any;
+    // Só conta o tempo total se o treino tiver sido iniciado
+    if (isWorkoutStarted) {
+      interval = setInterval(() => setTempoTotal(prev => prev + 1), 1000);
+    }
     return () => clearInterval(interval);
-  }, []);
+  }, [isWorkoutStarted]);
 
   useEffect(() => {
     let interval: any;
@@ -131,6 +176,48 @@ export default function ActiveWorkout() {
       lastSerieRef.current = { exIndex, serieIndex };
     }
   };
+
+  const handleStopRest = () => {
+    if (lastSerieRef.current) {
+        const { exIndex, serieIndex } = lastSerieRef.current;
+        const novosExercicios = [...exercicios];
+        
+        // Salva o tempo na série correspondente
+        novosExercicios[exIndex].seriesFeitas[serieIndex].descansoRealizado = tempoDescanso;
+        setExercicios(novosExercicios);
+        
+        // Limpa a referência para não salvar de novo sem querer
+        lastSerieRef.current = null;
+    }
+    
+    // Para e zera o cronômetro
+    setTimerDescansoAtivo(false);
+    setTempoDescanso(0);
+  };
+
+  // --- SALVAR PROGRESSO NO LOCALSTORAGE ---
+  useEffect(() => {
+    if (loading || exercicios.length === 0) return;
+
+    if (isWorkoutStarted) {
+        // Se INICIOU, salva o progresso atualizado normalmente
+        const sessionData = {
+            savedName: workoutName,
+            savedExercicios: exercicios,
+            savedTime: tempoTotal,
+            savedTimerDescansoAtivo: timerDescansoAtivo,
+            savedTempoDescanso: tempoDescanso,
+            savedLastSerie: lastSerieRef.current,
+            isWorkoutStarted: true,
+            lastUpdateTimestamp: Date.now() 
+        };
+        localStorage.setItem(`iron_ai_workout_progress_${id}`, JSON.stringify(sessionData));
+    } else {
+        // AQUI ESTÁ O EXORCISTA DO FANTASMA 👻
+        // Se NÃO INICIOU, destrói qualquer cache que tenha ficado salvo sem querer
+        localStorage.removeItem(`iron_ai_workout_progress_${id}`);
+    }
+  }, [exercicios, tempoTotal, tempoDescanso, timerDescansoAtivo, workoutName, loading, id, isWorkoutStarted]);
 
   // --- FUNÇÃO BLINDADA (Sanitização Direta) ---
   const handleUpdateValue = (exIndex: number, serieIndex: number, campo: 'peso' | 'reps', valor: string) => {
@@ -181,6 +268,8 @@ export default function ActiveWorkout() {
         };
 
         await api.post('/history', payload);
+        localStorage.removeItem(`iron_ai_workout_progress_${id}`);
+
         toast.success("Treino salvo com sucesso! 💪");
         navigate('/dashboard');
 
@@ -330,49 +419,63 @@ export default function ActiveWorkout() {
 
       {/* FOOTER */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#112218] border-t border-[#193324] p-4 lg:pl-80 z-30 pb-6 safe-area-bottom shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
+        <div className="max-w-3xl mx-auto">
             
-            <div className="flex flex-col">
-                <div className="flex items-center gap-3">
-                    <div className={`
-                        w-12 h-12 rounded-xl flex items-center justify-center transition-colors
-                        ${timerDescansoAtivo ? 'bg-[#13ec6a] text-[#112218]' : 'bg-[#193324] text-slate-500'}
-                    `}>
-                        <Timer size={24} />
-                    </div>
-                    <div>
-                        <p className="text-[10px] uppercase font-bold text-[#92c9a8] tracking-widest">Descanso</p>
-                        <p className={`text-2xl font-mono font-bold tabular-nums ${timerDescansoAtivo ? 'text-white' : 'text-slate-500'}`}>
-                            {formataTempo(tempoDescanso)}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            {timerDescansoAtivo ? (
-                 <button onClick={() => setTimerDescansoAtivo(false)} className="bg-[#193324] p-3 rounded-full text-white hover:bg-white/10 active:scale-95">
-                    <Pause size={20} />
+            {!isWorkoutStarted ? (
+                // BOTÃO DE INICIAR (Aparece antes de começar)
+                <button 
+                    onClick={() => setIsWorkoutStarted(true)}
+                    className="w-full h-14 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 text-lg bg-[#13ec6a] hover:bg-[#10d460] text-[#102217]"
+                >
+                    <Play size={24} /> Iniciar Treino
                 </button>
             ) : (
-                <button onClick={() => setTimerDescansoAtivo(true)} className="bg-[#193324] p-3 rounded-full text-white hover:bg-white/10 active:scale-95">
-                    <Play size={20} />
-                </button>
+                // CONTROLES DO TREINO (Aparece depois de começar)
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex flex-col">
+                        <div className="flex items-center gap-3">
+                            <div className={`
+                                w-12 h-12 rounded-xl flex items-center justify-center transition-colors
+                                ${timerDescansoAtivo ? 'bg-[#13ec6a] text-[#112218]' : 'bg-[#193324] text-slate-500'}
+                            `}>
+                                <Timer size={24} />
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-[#92c9a8] tracking-widest">Descanso</p>
+                                <p className={`text-2xl font-mono font-bold tabular-nums ${timerDescansoAtivo ? 'text-white' : 'text-slate-500'}`}>
+                                    {formataTempo(tempoDescanso)}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {timerDescansoAtivo ? (
+                        <button onClick={handleStopRest} className="bg-red-500/20 p-3 rounded-full text-red-500 hover:bg-red-500/30 active:scale-95 transition-colors">
+                            <Square size={20} fill="currentColor" />
+                        </button>
+                    ) : (
+                        <button onClick={() => setTimerDescansoAtivo(true)} className="bg-[#193324] p-3 rounded-full text-white hover:bg-white/10 active:scale-95">
+                            <Play size={20} />
+                        </button>
+                    )}
+
+                    <button 
+                        onClick={finishWorkout}
+                        disabled={saving}
+                        className={`
+                            flex-1 h-14 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 text-lg
+                            ${saving ? 'bg-gray-600 text-gray-300 cursor-not-allowed' : 'bg-[#13ec6a] hover:bg-[#10d460] text-[#102217]'}
+                        `}
+                    >
+                        {saving ? (
+                            <> <Loader2 className="animate-spin" size={20} /> ... </>
+                        ) : (
+                            <> <Save size={20} /> Finalizar </>
+                        )}
+                    </button>
+                </div>
             )}
 
-            <button 
-                onClick={finishWorkout}
-                disabled={saving}
-                className={`
-                    flex-1 h-14 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 text-lg
-                    ${saving ? 'bg-gray-600 text-gray-300 cursor-not-allowed' : 'bg-[#13ec6a] hover:bg-[#10d460] text-[#102217]'}
-                `}
-            >
-                {saving ? (
-                    <> <Loader2 className="animate-spin" size={20} /> ... </>
-                ) : (
-                    <> <Save size={20} /> Finalizar </>
-                )}
-            </button>
         </div>
       </div>
     </div>
