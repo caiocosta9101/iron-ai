@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Timer, CircleCheck, Circle, 
-  Play, Pause, Save, Loader2, Clock, Dumbbell, MessageSquarePlus, Square 
+  Play, Save, Loader2, Clock, Dumbbell, MessageSquarePlus, Square 
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../services/api';
