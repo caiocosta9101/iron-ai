@@ -1,4 +1,3 @@
-// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 
@@ -13,7 +12,8 @@ import WorkoutDetails from './pages/WorkoutDetails';
 import ActiveWorkout from './pages/ActiveWorkout';
 import RedirectToActive from './pages/RedirectToActive';
 import { AppLayout } from './layouts/AppLayout';
-
+import History from './pages/History';
+import { Progress } from './pages/Progress';
 // Guards de Rota
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PublicRoute } from './components/PublicRoute';
@@ -26,13 +26,13 @@ function App() {
         {/* Rota raiz */}
         <Route path="/" element={<Navigate to="/login" replace />} />
 
-        {/* Rotas Públicas (redireciona pro dashboard se já estiver logado) */}
+        {/* Rotas Públicas */}
         <Route element={<PublicRoute />}>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
         </Route>
 
-        {/* Rotas Privadas (redireciona pro login se não estiver logado) */}
+        {/* Rotas Privadas */}
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
@@ -42,6 +42,8 @@ function App() {
             <Route path="/active" element={<RedirectToActive />} />
             <Route path="/new-workout" element={<NewWorkout />} />
             <Route path="/new-workout/ai" element={<AiSetup />} />
+            <Route path="/history" element={<History />} /> 
+            <Route path="/progress" element={<Progress />} />
           </Route>
         </Route>
       </Routes>

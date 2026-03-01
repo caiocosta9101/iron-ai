@@ -1,5 +1,10 @@
-// server/src/routes.ts
-import { saveWorkoutSession } from './controllers/historyController';
+//
+import { getGeneralStats, getExerciseProgression, getUserExercisesByWorkout, getWeeklyMuscleStats } from './controllers/ProgressController';
+import { 
+  saveWorkoutSession, 
+  getWorkoutDates, 
+  getWorkoutDetailsByDate 
+} from './controllers/historyController';
 import { Router } from 'express';
 import { login, register } from './controllers/authController';
 import { getDashboardData } from './controllers/dashboardController';
@@ -52,7 +57,7 @@ router.get('/workouts', getUserWorkouts);           // Lista resumo dos treinos
 router.get('/workouts/:id', getWorkoutById);        // Detalhes de um treino completo (todos os dias)
 
 // === NOVA ROTA: MODO ACTIVE (Execução do Treino) ===
-// Busca apenas os exercícios de um dia específico (ex: Treino A)
+// Busca apenas os exercícios de um dia específico (ex: Treino A)==
 router.get('/workouts/day/:id', getWorkoutDayDetails); 
 
 // === ROTAS DE EDIÇÃO/EXCLUSÃO (AUTONOMIA DO USUÁRIO) ===
@@ -61,6 +66,19 @@ router.delete('/workouts/:id', deleteWorkout);           // Apaga treino inteiro
 router.put('/workouts/exercises/:id', updateExercise);   // Edita metas de um exercício
 router.delete('/workouts/exercises/:id', removeExercise);// Remove exercício de um dia
 
-// === ROTA DE HISTÓRICO (Salvar Treino Realizado) ===
+//ROTA DE HISTÓRICO (Salvar Treino Realizado) 
 router.post('/history', saveWorkoutSession);
+
+//NOVAS ROTAS: CALENDÁRIO DE HISTÓRICO 
+router.get('/history/dates', getWorkoutDates); 
+router.get('/history/details/:date', getWorkoutDetailsByDate);
+
+//NOVAS ROTAS: PROGRESSO 
+router.get('/progress/stats', getGeneralStats);
+router.get('/progress/exercise/:exerciseId', getExerciseProgression);
+router.get('/progress/exercises-by-workout', getUserExercisesByWorkout);
+router.get('/progress/muscle-stats', getWeeklyMuscleStats);
+
+
 export default router;
+

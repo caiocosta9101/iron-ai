@@ -65,3 +65,77 @@ export const saveWorkoutSession = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ error: 'Falha ao registrar treino.' });
   }
 };
+
+// --- BUSCAR DATAS PARA O CALENDÁRIO ---
+export const getWorkoutDates = async (req: AuthRequest, res: Response) => {
+  const userId = req.userId;
+
+  try {
+    const { data, error } = await supabase
+      .from('historico_sessoes')
+      .select('data_treino')
+      .eq('usuario_id', userId)
+      .eq('finalizado', true);
+
+    if (error) throw error;
+
+    // Mapeia para retornar apenas um array de strings com as datas (YYYY-MM-DD)
+    const dates = data.map(sessao => sessao.data_treino.split('T')[0]);
+    
+    // Remove duplicatas (caso tenha treinado duas vezes no mesmo dia)
+    const uniqueDates = [...new Set(dates)];
+
+    return res.status(200).json(uniqueDates);
+  } catch (error) {
+    console.error('Erro ao buscar datas do histórico:', error);
+    return res.status(500).json({ error: 'Falha ao carregar calendário.' });
+  }
+};
+
+// --- BUSCAR DETALHES DE UM DIA ESPECÍFICO ---
+export const getWorkoutDetailsByDate = async (req: AuthRequest, res: Response) => {
+  const userId = req.userId;
+  const { date } = req.params; // Formato esperado: YYYY-MM-DD
+
+  try {
+    // Busca a sessão do dia (início do dia até o fim do dia)
+    const { data: sessoes, error: sessaoError } = await supabase
+      .from('historico_sessoes')
+      .select('id, data_treino, duracao_real_minutos, dias_treino(nome)')
+      .eq('usuario_id', userId)
+      .gte('data_treino', `${date}T00:00:00.000Z`)
+      .lte('data_treino', `${date}T23:59:59.999Z`)
+      .eq('finalizado', true);
+
+    if (sessaoError) throw sessaoError;
+    if (!sessoes || sessoes.length === 0) {
+      return res.status(404).json({ message: 'Nenhum treino encontrado nesta data.' });
+    }
+
+    // Pega a primeira sessão do dia (assumindo 1 treino por dia na maioria dos casos)
+    const sessaoId = sessoes[0].id;
+
+    // Busca os exercícios daquela sessão específica
+    const { data: exercicios, error: execError } = await supabase
+      .from('historico_execucao_exercicio')
+      .select(`
+        cargas_kg,
+        repeticoes,
+        descansos_segundos,
+        observacoes,
+        exercicios (nome, grupo_muscular)
+      `)
+      .eq('sessao_id', sessaoId);
+
+    if (execError) throw execError;
+
+    return res.status(200).json({
+      sessao: sessoes[0],
+      exercicios: exercicios
+    });
+
+  } catch (error) {
+    console.error('Erro ao buscar detalhes do treino:', error);
+    return res.status(500).json({ error: 'Falha ao carregar detalhes do treino.' });
+  }
+};
