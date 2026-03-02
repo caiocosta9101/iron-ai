@@ -7,11 +7,18 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import api from '../services/api';
 
-interface Exercise {
-  id: number;
+interface Equipamento {
+  id: string;
   nome: string;
-  grupo_muscular: string;
-  equipamento: string;
+  peso_livre: boolean;
+}
+
+interface Exercise {
+  id: string;
+  nome: string;
+  grupo_pai: string;
+  musculo_primario: string;
+  equipamentos?: Equipamento; 
 }
 
 export default function NewWorkout() {
@@ -59,7 +66,7 @@ export default function NewWorkout() {
     newDias[dayIndex].exercicios.push({
       exercicio_id: exercise.id,
       nome: exercise.nome,
-      equipamento: exercise.equipamento,
+      equipamento: exercise.equipamentos?.nome || 'Peso do Corpo',
       series: 3,
       repeticoes_min: 8,
       repeticoes_max: 12,
@@ -308,10 +315,10 @@ export default function NewWorkout() {
                           {ex.nome} 
                           <span className="text-xs opacity-80 font-normal flex items-center gap-2">
                             <span className="bg-[#112218] px-2 py-1 rounded-md border border-[#326747]/50 text-zinc-400 group-hover:text-[#13ec6a]/80 transition-colors">
-                              {ex.grupo_muscular}
+                              {ex.musculo_primario}
                             </span>
                             <span className="bg-[#112218] px-2 py-1 rounded-md border border-[#13ec6a]/20 text-[#13ec6a]/80 group-hover:text-[#13ec6a] transition-colors">
-                              {ex.equipamento}
+                              {ex.equipamentos?.nome || 'peso do corpo'}
                             </span>
                           </span>
                         </span>

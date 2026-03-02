@@ -65,7 +65,8 @@ export default function AiSetup() {
                 altura: Number(answers.altura),
             }
             };
-
+            // ADICIONA AQUI:
+            console.log("Payload para o banco:", JSON.stringify(payloadParaBanco, null, 2));
         // 3. Salva o treino completo no Banco de Dados
         await api.post('/workouts', payloadParaBanco);
 

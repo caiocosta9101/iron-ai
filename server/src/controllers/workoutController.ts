@@ -24,6 +24,7 @@ const parseDescanso = (descString: string | number | undefined) => {
 
 // 1. CRIAR TREINO (Salva o JSON da IA ou Manual no Banco)
 export const createWorkout = async (req: AuthRequest, res: Response) => {
+  console.log('🔥 createWorkout chamado!');
   const { nome, descricao, perfil, dias, gerado_por_ia, objetivo } = req.body; 
   
   // O middleware já validou e nos entregou o ID aqui!
@@ -104,8 +105,9 @@ export const createWorkout = async (req: AuthRequest, res: Response) => {
               .from('exercicios')
               .insert([{ 
                 nome: exercicio.nome, 
-                grupo_muscular: dia.foco || 'Geral',
-                equipamento: exercicio.equipamento || 'Não especificado' 
+                grupo_pai: dia.foco || 'Geral',
+                musculo_primario: 'Geral',
+                equipamento_id: null // Fallback de segurança para exercícios avulsos
               }])
               .select()
               .single();
@@ -139,7 +141,7 @@ export const createWorkout = async (req: AuthRequest, res: Response) => {
     return res.status(201).json({ message: 'Treino salvo com sucesso!', treinoId });
 
   } catch (error: any) {
-    console.error('Erro ao salvar treino:', error);
+    console.error('Erro ao salvar treino:', JSON.stringify(error, null, 2));
     return res.status(500).json({ error: 'Erro interno ao persistir dados.' });
   }
 };
@@ -177,7 +179,7 @@ export const getWorkoutById = async (req: AuthRequest, res: Response) => {
           id, nome, ordem_dia, observacoes, foco,
           exercicios_treino (
             id, series, repeticoes_min, repeticoes_max, descanso_segundos, observacoes, ordem_execucao,
-            exercicios ( nome, equipamento ) 
+            exercicios ( nome, equipamentos ( nome ) )
           )
         )
       `)
@@ -207,7 +209,7 @@ export const getWorkoutById = async (req: AuthRequest, res: Response) => {
             .map((ex: any) => ({
               id: ex.id,
               nome: ex.exercicios.nome, 
-              equipamento: ex.exercicios.equipamento,
+              equipamento: ex.exercicios?.equipamentos?.nome || 'Peso do Corpo',
               series: ex.series,
               repeticoes_min: ex.repeticoes_min,
               repeticoes_max: ex.repeticoes_max,
@@ -384,10 +386,13 @@ export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
           exercicios (
             id,
             nome,
-            grupo_muscular,
-            equipamento
+            grupo_pai,
+            musculo_primario,
+            equipamentos (
+              nome
+            )
           )
-        )
+        ) 
       `)
       .eq('id', id)
       .single();
@@ -402,7 +407,7 @@ export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
     );
 
     return res.json({
-      ...dayDetails,
+      ...(dayDetails as any),
       exercicios_treino: sortedExercises
     });
 

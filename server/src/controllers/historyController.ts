@@ -123,7 +123,7 @@ export const getWorkoutDetailsByDate = async (req: AuthRequest, res: Response) =
         repeticoes,
         descansos_segundos,
         observacoes,
-        exercicios (nome, grupo_muscular)
+        exercicios (nome, grupo_pai, musculo_primario)
       `)
       .eq('sessao_id', sessaoId);
 

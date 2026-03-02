@@ -20,6 +20,7 @@ interface SerieExecucao {
 interface ExercicioExecucao {
   id: string; 
   nome: string;
+  equipamento: string;
   seriesAlvo: number;
   repsAlvo: string;
   descansoSegundos: number; 
@@ -110,12 +111,13 @@ export default function ActiveWorkout() {
 
                 return {
                     id: ex.exercicios.id,
-                    nome: ex.exercicios.nome, 
-                    seriesAlvo: ex.series || 3,
-                    repsAlvo: repsString,
-                    descansoSegundos: ex.descanso_segundos || 60,
-                    seriesFeitas: seriesIniciais,
-                    observacoesUsuario: "" 
+                nome: ex.exercicios.nome, 
+                equipamento: ex.exercicios?.equipamentos?.nome || 'Peso do Corpo',
+                seriesAlvo: ex.series || 3,
+                repsAlvo: repsString,
+                descansoSegundos: ex.descanso_segundos || 60,
+                seriesFeitas: seriesIniciais,
+                observacoesUsuario: ""
                 };
             });
 

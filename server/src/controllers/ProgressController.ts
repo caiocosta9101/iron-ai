@@ -1,4 +1,4 @@
-
+//
 import { Response } from 'express';
 import { supabase } from '../db'; // Ajuste o caminho do seu db.ts se necessário
 import { AuthRequest } from '../middlewares/authMiddleware';
@@ -134,14 +134,14 @@ export const getWeeklyMuscleStats = async (req: AuthRequest, res: Response): Pro
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    // Busca os dados fazendo os JOINs necessários para pegar o grupo muscular
+    // Busca os dados fazendo os JOINs necessários para pegar o grupo muscular (agora grupo_pai)
     const { data, error } = await supabase
       .from('historico_execucao_exercicio')
       .select(`
         cargas_kg,
         repeticoes,
         historico_sessoes!inner ( usuario_id, data_treino ),
-        exercicios!inner ( nome, grupo_muscular )
+        exercicios!inner ( nome, grupo_pai )
       `)
       .eq('historico_sessoes.usuario_id', userId)
       .gte('historico_sessoes.data_treino', sevenDaysAgo.toISOString());
@@ -152,7 +152,7 @@ export const getWeeklyMuscleStats = async (req: AuthRequest, res: Response): Pro
     const statsPorGrupo: Record<string, any> = {};
 
     data.forEach((row: any) => {
-      const grupo = row.exercicios.grupo_muscular;
+      const grupo = row.exercicios.grupo_pai; // <-- Atualizado aqui
       const exercicio = row.exercicios.nome;
       const cargas = row.cargas_kg || [];
       const reps = row.repeticoes || [];
@@ -160,11 +160,11 @@ export const getWeeklyMuscleStats = async (req: AuthRequest, res: Response): Pro
       // Se o grupo muscular ainda não existe no objeto, inicializa ele
       if (!statsPorGrupo[grupo]) {
         statsPorGrupo[grupo] = {
-          grupo_muscular: grupo,
+          grupo_pai: grupo, // <-- Atualizado aqui
           totalSeries: 0,
           totalReps: 0,
           volumeTotal: 0,
-          detalhesExercicios: {} // Para guardar as cargas máximas individuais
+          detalhesExercicios: {} 
         };
       }
 
@@ -197,9 +197,9 @@ export const getWeeklyMuscleStats = async (req: AuthRequest, res: Response): Pro
       }
     });
 
-    // Converte o objeto de volta para um array para o frontend conseguir renderizar (usando .map)
+    // Converte o objeto de volta para um array para o frontend conseguir renderizar
     const arrayFormatado = Object.values(statsPorGrupo).map((g: any) => ({
-      grupo_muscular: g.grupo_muscular,
+      grupo_pai: g.grupo_pai, // <-- Atualizado aqui
       totalSeries: g.totalSeries,
       totalReps: g.totalReps,
       volumeTotal: g.volumeTotal,
@@ -207,7 +207,7 @@ export const getWeeklyMuscleStats = async (req: AuthRequest, res: Response): Pro
         nome,
         maxCarga: dados.maxCarga
       }))
-    })).sort((a, b) => b.totalSeries - a.totalSeries); // Ordena pelos grupos mais treinados
+    })).sort((a, b) => b.totalSeries - a.totalSeries); 
 
     return res.status(200).json(arrayFormatado);
   } catch (error) {

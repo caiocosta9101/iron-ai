@@ -159,7 +159,7 @@ export default function History() {
                       {item.exercicios?.nome}
                     </h3>
                     <span className="text-xs px-2 py-1 bg-gray-800 text-gray-400 rounded-md mb-4 inline-block">
-                      {item.exercicios?.grupo_muscular}
+                      {item.exercicios?.grupo_pai} | Foco: {item.exercicios?.musculo_primario}
                     </span>
 
                     {/* Tabela de Séries */}

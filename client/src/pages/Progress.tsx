@@ -222,7 +222,7 @@ export function Progress() {
                 
                 {/* Cabeçalho do Card */}
                 <div className="flex justify-between items-center border-b border-gray-800 pb-3 mb-3">
-                  <h3 className="font-bold text-lg text-white">{grupo.grupo_muscular}</h3>
+                  <h3 className="font-bold text-lg text-white">{grupo.grupo_pai}</h3>
                   <span className="bg-emerald-500/10 text-emerald-400 text-xs font-bold px-2 py-1 rounded">
                     {grupo.totalSeries} Séries
                   </span>

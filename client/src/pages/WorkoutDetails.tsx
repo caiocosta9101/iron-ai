@@ -183,7 +183,7 @@ export default function WorkoutDetails() {
             const newExs = d.exercicios.map(e => e.id === oldExId ? { 
               ...e, 
               nome: newLibraryEx.nome,
-              equipamento: newLibraryEx.equipamento
+              equipamento: newLibraryEx.equipamentos?.nome || 'Peso do Corpo'
             } : e);
             return { ...d, exercicios: newExs };
           }
@@ -368,8 +368,8 @@ export default function WorkoutDetails() {
                               >
                                 <span className="font-bold flex-1">{libEx.nome}</span>
                                 <span className="flex gap-2 shrink-0">
-                                  <span className="text-xs opacity-70 bg-[#112218] px-2 py-1 rounded-md border border-[#326747]/50 group-hover:text-blue-400/80 transition-colors">{libEx.grupo_muscular}</span>
-                                  <span className="text-xs text-blue-400/70 bg-[#112218] px-2 py-1 rounded-md border border-blue-500/20 group-hover:text-blue-400 transition-colors">{libEx.equipamento}</span>
+                                  <span className="text-xs opacity-70 bg-[#112218] px-2 py-1 rounded-md border border-[#326747]/50 group-hover:text-blue-400/80 transition-colors">{libEx.musculo_primario}</span>
+                                  <span className="text-xs text-blue-400/70 bg-[#112218] px-2 py-1 rounded-md border border-blue-500/20 group-hover:text-blue-400 transition-colors">{libEx.equipamentos?.nome || 'Peso do Corpo'}</span>
                                 </span>
                               </button>
                             ))

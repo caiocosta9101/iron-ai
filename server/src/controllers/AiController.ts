@@ -6,20 +6,12 @@ import { supabase } from '../db';
 
 // =============================================================
 // SINGLETON DO GEMINI
-// Instancio o cliente uma única vez quando o servidor sobe,
-// em vez de criar uma nova instância a cada requisição.
-// Isso evita overhead desnecessário e possíveis problemas de
-// rate limit sob carga.
 // =============================================================
 const apiKey = process.env.GEMINI_API_KEY;
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
 // =============================================================
 // SCHEMA DE VALIDAÇÃO (Zod)
-// Valido e tipar tudo que vem do body antes de usar.
-// Mesmo padrão que já uso no authController — consistência.
-// Isso garante que tipos errados, campos ausentes ou valores
-// absurdos (ex: idade: 999) nunca cheguem no prompt.
 // =============================================================
 const generateSchema = z.object({
   objetivo: z.string().min(1).max(100),
@@ -34,46 +26,27 @@ const generateSchema = z.object({
 
 // =============================================================
 // HELPER: SANITIZAÇÃO DE TEXTO LIVRE
-// O campo "limitacoes" é texto livre digitado pelo usuário e
-// vai direto para dentro do prompt. Removo caracteres que
-// poderiam ser usados para injetar instruções na IA (Prompt Injection).
 // =============================================================
 const sanitize = (str: string) => str.replace(/[<>"]/g, '').trim();
 
 export const generateWorkout = async (req: AuthRequest, res: Response) => {
   
   // GUARDA 1: VERIFICAÇÃO DE CONFIGURAÇÃO
-  // Antes de qualquer coisa, verifico se a chave da API existe.
-  // Mesmo padrão que já uso com o JWT_SECRET no authController —
-  // falha explícita e controlada, sem crash obscuro do SDK.
-  // =============================================================
   if (!apiKey || !genAI) {
     console.error('GEMINI_API_KEY não configurada no ambiente!');
     return res.status(500).json({ error: 'Erro de configuração do servidor.' });
   }
 
-  // =============================================================
   // GUARDA 2: VALIDAÇÃO DO BODY
-  // Uso safeParse para não lançar exceção — retorno 400 com os
-  // erros detalhados se algo vier errado, sem precisar de try/catch
-  // só pra isso.
-  // =============================================================
   const parsed = generateSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error!.issues });
   }
 
-  // Desestrutura já tipado e validado
   const { objetivo, idade, peso, altura, limitacoes, dias, tempo, nivel } = parsed.data;
 
   // GUARDA 3: RATE LIMIT POR USUÁRIO
-  // Conto quantos treinos gerados por IA o usuário já salvou hoje.
-  // Uso a tabela 'treinos' que já existe — sem precisar de nada novo.
-  // O limite é 3 gerações por dia. Atrelado ao usuário autenticado,
-  // então não adianta trocar de IP ou usar VPN para burlar.
-  // Se o limite for atingido, a requisição morre aqui e o Gemini
-  // nunca é chamado — sem gastar crédito da API.
-  const hoje = new Date().toISOString().split('T')[0]; // ex: "2025-01-15"
+  const hoje = new Date().toISOString().split('T')[0];
 
   const { count, error: countError } = await supabase
     .from('treinos')
@@ -93,24 +66,32 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
     });
   }
 
+  // =============================================================
+  // GUARDA 4: BUSCAR BIBLIOTECA PARA LIMITAR A IA
+  // =============================================================
+  const { data: exerciciosDB, error: dbError } = await supabase
+    .from('exercicios')
+    .select('id, nome, grupo_pai, musculo_primario, equipamentos(nome)');
+
+  if (dbError) {
+    console.error('Erro ao buscar biblioteca para a IA:', dbError);
+    return res.status(500).json({ error: 'Erro ao conectar com a base de exercícios.' });
+  }
+
+  // Formata os exercícios numa lista de texto para a IA ler, incluindo o ID invisível para o usuário final
+  const bibliotecaContext = exerciciosDB && exerciciosDB.length > 0
+    ? exerciciosDB.map((ex: any) => `- [ID: ${ex.id}] ${ex.nome} (Foco: ${ex.musculo_primario} | Equipamento: ${ex.equipamentos?.nome || 'Peso Corporal'})`).join('\n')
+    : 'Nenhum exercício encontrado.';
+
   try {
-    // Pego o modelo do singleton já criado no topo do arquivo
     const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-pro-preview",
       generationConfig: {
-        // Força o Gemini a responder APENAS com JSON válido.
-        // Evita que ele adicione texto antes ou depois do objeto.
         responseMimeType: "application/json",
         temperature: 0.7,
       }
     });
 
-    // =============================================================
-    // SANITIZAÇÃO ANTES DE INTERPOLAR NO PROMPT
-    // Aplico a sanitização apenas no campo de texto livre (limitacoes).
-    // Os outros campos (idade, peso, etc.) já são números validados
-    // pelo Zod, então não há risco de injeção neles.
-    // =============================================================
     const limitacoesSafe = limitacoes
       ? sanitize(limitacoes)
       : 'Nenhuma restrição declarada.';
@@ -127,13 +108,19 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
       
       ⚠️ RESTRIÇÕES MÉDICAS / LESÕES:
       "${limitacoesSafe}"
+
+      📚 BIBLIOTECA DE EXERCÍCIOS PERMITIDOS (CRÍTICO):
+      Você é OBRIGADO a montar o treino utilizando EXCLUSIVAMENTE os exercícios listados abaixo.
+      NÃO invente exercícios novos, não use sinônimos e copie o nome exatamente como está na lista:
+      
+      ${bibliotecaContext}
       
       DIRETRIZES DE SEGURANÇA (CRÍTICO):
       1. Se houver lesões citadas acima, você DEVE excluir exercícios que sobrecarreguem a região afetada.
-      2. Substitua movimentos perigosos por variantes biomecanicamente seguras.
+      2. Substitua movimentos perigosos por variantes biomecanicamente seguras da Biblioteca.
 
       FORMATO DE RESPOSTA (JSON OBRIGATÓRIO):
-      Responda apenas com um objeto JSON seguindo estritamente esta estrutura:
+      Responda apenas com um objeto JSON seguindo estritamente esta estrutura (atenção aos campos numéricos):
       {
         "nome": "Nome criativo e motivador do programa",
         "descricao": "Explicação técnica resumida do foco da periodização",
@@ -143,11 +130,14 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
             "foco": "Empurrar/Puxar/Pernas/Fullbody",
             "exercicios": [
               {
-                "nome": "Nome do Exercício (em Português)",
-                "equipamento": "Halteres, Barra, Máquina, ou Peso Corporal",
+                "exercicio_id": "O ID exato copiado da tag [ID: ...] da biblioteca",
+                "nome": "Nome EXATO do Exercício copiado da biblioteca",
+                "grupo_pai": "Categoria principal",
+                "musculo_primario": "Músculo alvo",
                 "series": 4,
-                "repeticoes": "10-12",
-                "descanso": "60s",
+                "repeticoes_min": 8,
+                "repeticoes_max": 12,
+                "descanso_segundos": 60,
                 "observacao": "Dica de segurança ou técnica"
               }
             ]
@@ -160,19 +150,11 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
     const responseText = result.response.text();
     const treinoGerado = JSON.parse(responseText);
 
-    // Log interno com informação útil para debug — sem expor pro cliente
     console.log(`Treino gerado com sucesso: ${treinoGerado.nome}`);
 
     return res.json(treinoGerado);
 
   } catch (error: any) {
-    // =============================================================
-    // TRATAMENTO DE ERRO SEGURO
-    // Logo o erro completo no servidor para debug,
-    // mas retorno apenas uma mensagem genérica para o cliente.
-    // O "details: error.message" foi removido — ele expunha
-    // informações internas do SDK do Gemini na resposta.
-    // =============================================================
     console.error('Erro ao gerar treino com Gemini:', error);
     return res.status(500).json({
       error: 'Falha na inteligência artificial. Tente novamente em instantes.',

@@ -1,12 +1,21 @@
+// server/src/controllers/exerciseController.ts
 import { Response } from 'express';
 import { supabase } from '../db'; 
 import { AuthRequest } from '../middlewares/authMiddleware';
+
 export const getExercises = async (req: AuthRequest, res: Response) => {
   try {
-    // Busca todos os exercícios ordenados por nome para facilitar no frontend
+    // Busca todos os exercícios e faz o join com a tabela equipamentos
     const { data, error } = await supabase
       .from('exercicios')
-      .select('*')
+      .select(`
+        *,
+        equipamentos (
+          id,
+          nome,
+          peso_livre
+        )
+      `)
       .order('nome', { ascending: true });
 
     if (error) throw error;
