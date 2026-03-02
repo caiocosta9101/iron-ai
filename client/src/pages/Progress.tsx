@@ -9,7 +9,7 @@ import { ptBR } from 'date-fns/locale';
 
 export function Progress() {
   const [stats, setStats] = useState({ totalTreinos: 0, tempoTotalHoras: 0 });
-  const [workoutGroups, setWorkoutGroups] = useState<any[]>([]); // <--- Estado novo
+  const [workoutGroups, setWorkoutGroups] = useState<any[]>([]);
   const [selectedExercise, setSelectedExercise] = useState<string>('');
   const [chartData, setChartData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -206,6 +206,7 @@ export function Progress() {
           )}
         </div>
       </div>
+
       {/* --- NOVA SEÇÃO: VOLUME SEMANAL POR GRUPO MUSCULAR --- */}
       <div className="pt-4">
         <div className="flex items-center gap-2 mb-4">
@@ -221,9 +222,18 @@ export function Progress() {
               <div key={index} className="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-sm">
                 
                 {/* Cabeçalho do Card */}
-                <div className="flex justify-between items-center border-b border-gray-800 pb-3 mb-3">
-                  <h3 className="font-bold text-lg text-white">{grupo.grupo_pai}</h3>
-                  <span className="bg-emerald-500/10 text-emerald-400 text-xs font-bold px-2 py-1 rounded">
+                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-3">
+                  <div>
+                    {/* Título Principal: O Músculo (Ex: Tríceps) */}
+                    <h3 className="font-bold text-lg text-white leading-tight">
+                      {grupo.musculo_primario}
+                    </h3>
+                    {/* Tag Menor: O Grupo Pai (Ex: Braço) */}
+                    <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
+                      {grupo.grupo_pai}
+                    </span>
+                  </div>
+                  <span className="bg-emerald-500/10 text-emerald-400 text-xs font-bold px-2 py-1 rounded mt-1">
                     {grupo.totalSeries} Séries
                   </span>
                 </div>

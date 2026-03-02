@@ -121,7 +121,7 @@ export const getUserExercisesByWorkout = async (req: AuthRequest, res: Response)
     return res.status(500).json({ error: 'Erro ao buscar lista de exercícios.' });
   }
 };
-// 4. Resumo de Volume por Grupo Muscular (Últimos 7 dias)
+// 4. Resumo de Volume por MÚSCULO PRIMÁRIO (Últimos 7 dias)
 export const getWeeklyMuscleStats = async (req: AuthRequest, res: Response): Promise<any> => {
   const userId = req.userId;
 
@@ -130,37 +130,37 @@ export const getWeeklyMuscleStats = async (req: AuthRequest, res: Response): Pro
   }
 
   try {
-    // Define a data de corte para os últimos 7 dias
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    // Busca os dados fazendo os JOINs necessários para pegar o grupo muscular (agora grupo_pai)
+    // ADICIONADO: musculo_primario no select
     const { data, error } = await supabase
       .from('historico_execucao_exercicio')
       .select(`
         cargas_kg,
         repeticoes,
         historico_sessoes!inner ( usuario_id, data_treino ),
-        exercicios!inner ( nome, grupo_pai )
+        exercicios!inner ( nome, grupo_pai, musculo_primario ) 
       `)
       .eq('historico_sessoes.usuario_id', userId)
       .gte('historico_sessoes.data_treino', sevenDaysAgo.toISOString());
 
     if (error) throw error;
 
-    // Objeto para acumular os cálculos
     const statsPorGrupo: Record<string, any> = {};
 
     data.forEach((row: any) => {
-      const grupo = row.exercicios.grupo_pai; // <-- Atualizado aqui
+      // MUDANÇA: A chave principal agora é o musculo_primario
+      const primario = row.exercicios.musculo_primario || 'Não Especificado';
+      const pai = row.exercicios.grupo_pai || 'Outros';
       const exercicio = row.exercicios.nome;
       const cargas = row.cargas_kg || [];
       const reps = row.repeticoes || [];
 
-      // Se o grupo muscular ainda não existe no objeto, inicializa ele
-      if (!statsPorGrupo[grupo]) {
-        statsPorGrupo[grupo] = {
-          grupo_pai: grupo, // <-- Atualizado aqui
+      if (!statsPorGrupo[primario]) {
+        statsPorGrupo[primario] = {
+          musculo_primario: primario, // Título principal
+          grupo_pai: pai,             // Tag secundária
           totalSeries: 0,
           totalReps: 0,
           volumeTotal: 0,
@@ -168,11 +168,10 @@ export const getWeeklyMuscleStats = async (req: AuthRequest, res: Response): Pro
         };
       }
 
-      if (!statsPorGrupo[grupo].detalhesExercicios[exercicio]) {
-        statsPorGrupo[grupo].detalhesExercicios[exercicio] = { maxCarga: 0 };
+      if (!statsPorGrupo[primario].detalhesExercicios[exercicio]) {
+        statsPorGrupo[primario].detalhesExercicios[exercicio] = { maxCarga: 0 };
       }
 
-      // Calcula a sessão atual
       const seriesConcluidas = cargas.length;
       let repsNesteExercicio = 0;
       let volumeNesteExercicio = 0;
@@ -186,20 +185,18 @@ export const getWeeklyMuscleStats = async (req: AuthRequest, res: Response): Pro
         }
       }
 
-      // Acumula os totais no grupo
-      statsPorGrupo[grupo].totalSeries += seriesConcluidas;
-      statsPorGrupo[grupo].totalReps += repsNesteExercicio;
-      statsPorGrupo[grupo].volumeTotal += volumeNesteExercicio;
+      statsPorGrupo[primario].totalSeries += seriesConcluidas;
+      statsPorGrupo[primario].totalReps += repsNesteExercicio;
+      statsPorGrupo[primario].volumeTotal += volumeNesteExercicio;
 
-      // Atualiza a carga máxima geral do exercício se a atual for maior
-      if (maxCargaNesteExercicio > statsPorGrupo[grupo].detalhesExercicios[exercicio].maxCarga) {
-        statsPorGrupo[grupo].detalhesExercicios[exercicio].maxCarga = maxCargaNesteExercicio;
+      if (maxCargaNesteExercicio > statsPorGrupo[primario].detalhesExercicios[exercicio].maxCarga) {
+        statsPorGrupo[primario].detalhesExercicios[exercicio].maxCarga = maxCargaNesteExercicio;
       }
     });
 
-    // Converte o objeto de volta para um array para o frontend conseguir renderizar
     const arrayFormatado = Object.values(statsPorGrupo).map((g: any) => ({
-      grupo_pai: g.grupo_pai, // <-- Atualizado aqui
+      musculo_primario: g.musculo_primario,
+      grupo_pai: g.grupo_pai,
       totalSeries: g.totalSeries,
       totalReps: g.totalReps,
       volumeTotal: g.volumeTotal,

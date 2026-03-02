@@ -1,18 +1,31 @@
-import { useEffect, useState } from 'react';
-import { format, getDaysInMonth, getDay, parseISO } from 'date-fns';
+import { useEffect, useState, useRef } from 'react';
+import { 
+  format, getDaysInMonth, getDay, parseISO, 
+  addMonths, subMonths, addYears, subYears, setMonth, setYear 
+} from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { X, Clock, Dumbbell, Calendar, MessageSquare } from 'lucide-react';
+import { 
+  X, Clock, Dumbbell, Calendar, MessageSquare, 
+  ChevronLeft, ChevronRight, Copy, Image as ImageIcon, FileText 
+} from 'lucide-react';
+import { toast } from 'sonner';
 import api from '../services/api';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 export default function History() {
   const [datasTreinadas, setDatasTreinadas] = useState<string[]>([]);
+  
+  // Estado de navegação do calendário
+  const [currentDate, setCurrentDate] = useState(new Date());
   
   // Estados do Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [workoutDetails, setWorkoutDetails] = useState<any>(null);
 
-  const currentYear = new Date().getFullYear();
+  // Ref para capturar a imagem do modal
+  const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function fetchHistory() {
@@ -23,12 +36,10 @@ export default function History() {
         console.error('Erro ao buscar histórico:', error);
       }
     }
-
     fetchHistory();
   }, []);
 
   const handleDayClick = async (dateString: string) => {
-    // Só abre o modal se o dia tiver treino
     if (datasTreinadas.includes(dateString)) {
       setIsModalOpen(true);
       setIsLoadingDetails(true);
@@ -51,82 +62,275 @@ export default function History() {
     return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
   };
 
-  // Nomes dos meses e dias da semana para o cabeçalho do calendário
+  // --- FUNÇÕES DE EXPORTAÇÃO ---
+  const handleCopyToWhatsApp = () => {
+    if (!workoutDetails) return;
+
+    const dataFormatada = format(parseISO(workoutDetails.sessao.data_treino), "dd/MM/yyyy");
+    const nomeTreino = workoutDetails.sessao.dias_treino?.nome || 'Treino Extra';
+    const duracao = workoutDetails.sessao.duracao_real_minutos;
+
+    let texto = `*Resumo do Treino - Iron AI* 🤖💪\n`;
+    texto += `📅 Data: ${dataFormatada}\n`;
+    texto += `🎯 Foco: ${nomeTreino}\n`;
+    texto += `⏱️ Duração: ${duracao} min\n\n`;
+
+    workoutDetails.exercicios.forEach((item: any) => {
+      texto += `🔸 *${item.exercicios?.nome}*\n`;
+      item.cargas_kg.forEach((carga: number, index: number) => {
+        const reps = item.repeticoes[index];
+        texto += `   Série ${index + 1}: ${carga}kg x ${reps} reps\n`;
+      });
+      texto += `\n`;
+    });
+
+    navigator.clipboard.writeText(texto).then(() => {
+      toast.success("Treino copiado! Pronto para colar no WhatsApp.");
+    }).catch(err => {
+      console.error('Erro ao copiar', err);
+      toast.error("Erro ao copiar o treino.");
+    });
+  };
+
+  const handleDownloadImage = async () => {
+    if (!modalRef.current) return;
+    
+    const toastId = toast.loading("Gerando imagem completa...");
+    const modalElement = modalRef.current;
+    
+    // 1. Encontra a div de dentro que tem o scroll
+    const scrollableDiv = modalElement.querySelector('.overflow-y-auto') as HTMLElement;
+    
+    // 2. Salva os estilos originais para não quebrar seu layout depois
+    const originalMaxHeight = modalElement.style.maxHeight;
+    const originalOverflow = modalElement.style.overflow;
+    const originalScrollOverflow = scrollableDiv ? scrollableDiv.style.overflow : '';
+
+    try {
+      // 3. "Estica" o modal removendo as travas de altura e scroll
+      modalElement.style.maxHeight = 'none';
+      modalElement.style.overflow = 'visible';
+      if (scrollableDiv) scrollableDiv.style.overflow = 'visible';
+
+      // 4. Bate a foto com o modal esticado
+      const canvas = await html2canvas(modalElement, {
+        backgroundColor: '#111827',
+        scale: 2,
+        windowHeight: modalElement.scrollHeight, // Avisa a câmera o tamanho real
+      });
+
+      // 5. Gera a imagem e baixa
+      const image = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = image;
+      const dataFormatada = workoutDetails?.sessao.data_treino ? format(parseISO(workoutDetails.sessao.data_treino), "yyyy-MM-dd") : 'treino';
+      link.download = `IronAI_${dataFormatada}.png`;
+      link.click();
+
+      toast.success("Imagem salva com sucesso!", { id: toastId });
+    } catch (error) {
+      console.error('Erro ao gerar imagem:', error);
+      toast.error("Erro ao gerar imagem.", { id: toastId });
+    } finally {
+      // 6. Devolve a barra de rolagem e a altura original pro modal
+      modalElement.style.maxHeight = originalMaxHeight;
+      modalElement.style.overflow = originalOverflow;
+      if (scrollableDiv) scrollableDiv.style.overflow = originalScrollOverflow;
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!modalRef.current) return;
+    
+    const toastId = toast.loading("Gerando PDF completo...");
+    const modalElement = modalRef.current;
+    
+    const scrollableDiv = modalElement.querySelector('.overflow-y-auto') as HTMLElement;
+    
+    const originalMaxHeight = modalElement.style.maxHeight;
+    const originalOverflow = modalElement.style.overflow;
+    const originalScrollOverflow = scrollableDiv ? scrollableDiv.style.overflow : '';
+
+    try {
+      modalElement.style.maxHeight = 'none';
+      modalElement.style.overflow = 'visible';
+      if (scrollableDiv) scrollableDiv.style.overflow = 'visible';
+
+      const canvas = await html2canvas(modalElement, {
+        backgroundColor: '#111827',
+        scale: 2,
+        windowHeight: modalElement.scrollHeight,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: [canvas.width, canvas.height]
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      const dataFormatada = workoutDetails?.sessao.data_treino ? format(parseISO(workoutDetails.sessao.data_treino), "yyyy-MM-dd") : 'treino';
+      pdf.save(`IronAI_${dataFormatada}.pdf`);
+
+      toast.success("PDF salvo com sucesso!", { id: toastId });
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      toast.error("Erro ao gerar PDF.", { id: toastId });
+    } finally {
+      modalElement.style.maxHeight = originalMaxHeight;
+      modalElement.style.overflow = originalOverflow;
+      if (scrollableDiv) scrollableDiv.style.overflow = originalScrollOverflow;
+    }
+  };
+
+  // --- FUNÇÕES DE NAVEGAÇÃO ---
+  const handlePrevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+  const handleNextMonth = () => setCurrentDate(addMonths(currentDate, 1));
+  
+  const handlePrevYear = () => setCurrentDate(subYears(currentDate, 1));
+  const handleNextYear = () => setCurrentDate(addYears(currentDate, 1));
+  
+  const handleGoToToday = () => setCurrentDate(new Date());
+
+  // Variáveis auxiliares de data
+  const currentYear = currentDate.getFullYear();
+  const currentMonthIndex = currentDate.getMonth();
   const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const diasSemana = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+  
+  const realCurrentYear = new Date().getFullYear();
+  const anosDisponiveis = Array.from({ length: 8 }, (_, i) => realCurrentYear - 5 + i);
+
+  const totalDias = getDaysInMonth(currentDate);
+  const diaInicio = getDay(new Date(currentYear, currentMonthIndex, 1));
+  const diasArray = Array.from({ length: totalDias }, (_, i) => i + 1);
+  const espacosVazios = Array.from({ length: diaInicio }, (_, i) => i);
 
   return (
-    <div className="p-6 text-white relative">
-      <h1 className="text-2xl font-bold mb-2">Histórico de Treinos</h1>
-      <p className="text-gray-400 mb-6">Seus treinos realizados em {currentYear}</p>
-      
-      {/* GRID DE MESES */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {meses.map((nomeMes, indexMes) => {
-          // Lógica para descobrir quantos dias o mês tem e em qual dia da semana ele começa
-          const totalDias = getDaysInMonth(new Date(currentYear, indexMes));
-          const diaInicio = getDay(new Date(currentYear, indexMes, 1)); // 0 = Dom, 6 = Sáb
+    <div className="p-6 text-white relative max-w-4xl mx-auto">
+      <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-6 gap-4">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">Histórico de Treinos</h1>
+          <p className="text-gray-400 text-sm">Acompanhe sua consistência</p>
+        </div>
+        
+        {/* CONTROLES DE NAVEGAÇÃO */}
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto">
           
-          const diasArray = Array.from({ length: totalDias }, (_, i) => i + 1);
-          const espacosVazios = Array.from({ length: diaInicio }, (_, i) => i);
+          {/* Controle de Mês */}
+          <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg p-1 shadow-sm w-full sm:w-auto">
+            <button onClick={handlePrevMonth} className="p-2 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-white">
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            
+            <select 
+              value={currentMonthIndex} 
+              onChange={(e) => setCurrentDate(setMonth(currentDate, Number(e.target.value)))}
+              className="bg-transparent text-emerald-500 font-bold text-center appearance-none cursor-pointer outline-none text-base md:text-lg w-28"
+            >
+              {meses.map((mes, index) => (
+                <option key={mes} value={index} className="bg-gray-900 text-white">
+                  {mes}
+                </option>
+              ))}
+            </select>
 
-          return (
-            <div key={nomeMes} className="bg-gray-900 p-5 rounded-xl border border-gray-800 shadow-sm">
-              <h3 className="text-lg font-bold text-white mb-4 text-center">{nomeMes}</h3>
-              
-              {/* Cabeçalho dos dias da semana */}
-              <div className="grid grid-cols-7 gap-1 text-center mb-2">
-                {diasSemana.map((d, i) => (
-                  <div key={i} className="text-xs font-semibold text-gray-500">{d}</div>
-                ))}
-              </div>
-              
-              {/* Grid de dias numéricos */}
-              <div className="grid grid-cols-7 gap-1">
-                {/* Preenche os espaços vazios antes do dia 1 */}
-                {espacosVazios.map(v => <div key={`empty-${v}`} />)}
-                
-                {diasArray.map(dia => {
-                  // Formata a data para YYYY-MM-DD para comparar com o banco
-                  const dateString = `${currentYear}-${String(indexMes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
-                  const treinou = datasTreinadas.includes(dateString);
+            <button onClick={handleNextMonth} className="p-2 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-white">
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
 
-                  return (
-                    <button
-                      key={dia}
-                      onClick={() => handleDayClick(dateString)}
-                      disabled={!treinou}
-                      className={`
-                        aspect-square flex items-center justify-center text-sm rounded-md transition-all duration-200 font-medium
-                        ${treinou 
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500 hover:text-gray-900 cursor-pointer shadow-[0_0_10px_rgba(16,185,129,0.1)]' 
-                          : 'bg-gray-800/50 text-gray-500 cursor-default hover:bg-gray-800'}
-                      `}
-                    >
-                      {dia}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+          {/* Controle de Ano */}
+          <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg p-1 shadow-sm w-full sm:w-auto">
+            <button onClick={handlePrevYear} className="p-2 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-white">
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            
+            <select 
+              value={currentYear} 
+              onChange={(e) => setCurrentDate(setYear(currentDate, Number(e.target.value)))}
+              className="bg-transparent text-gray-300 font-bold text-center appearance-none cursor-pointer outline-none text-base md:text-lg w-16"
+            >
+              {anosDisponiveis.map((ano) => (
+                <option key={ano} value={ano} className="bg-gray-900 text-white">
+                  {ano}
+                </option>
+              ))}
+            </select>
+
+            <button onClick={handleNextYear} className="p-2 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-white">
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+          
+        </div>
+      </div>
+      
+      {/* Botão para voltar para o mês atual */}
+      {(currentDate.getMonth() !== new Date().getMonth() || currentDate.getFullYear() !== new Date().getFullYear()) && (
+        <div className="flex justify-end mb-4">
+          <button onClick={handleGoToToday} className="text-xs text-emerald-500 hover:text-emerald-400 font-medium transition-colors">
+            Voltar para Hoje
+          </button>
+        </div>
+      )}
+
+      {/* CALENDÁRIO */}
+      <div className="bg-gray-900 p-6 rounded-xl border border-gray-800 shadow-sm">
+        <div className="grid grid-cols-7 gap-2 text-center mb-4">
+          {diasSemana.map((d, i) => (
+            <div key={i} className="text-sm font-semibold text-gray-500">{d}</div>
+          ))}
+        </div>
+        
+        <div className="grid grid-cols-7 gap-2">
+          {espacosVazios.map(v => <div key={`empty-${v}`} />)}
+          
+          {diasArray.map(dia => {
+            const dateString = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+            const treinou = datasTreinadas.includes(dateString);
+            const isToday = dateString === format(new Date(), 'yyyy-MM-dd');
+
+            return (
+              <button
+                key={dia}
+                onClick={() => handleDayClick(dateString)}
+                disabled={!treinou}
+                className={`
+                  relative aspect-square flex flex-col items-center justify-center text-sm md:text-base rounded-lg transition-all duration-200 font-medium
+                  ${treinou 
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500 hover:text-gray-900 cursor-pointer shadow-[0_0_10px_rgba(16,185,129,0.1)]' 
+                    : 'bg-gray-800/30 text-gray-500 cursor-default hover:bg-gray-800/50'}
+                  ${isToday && !treinou ? 'border border-gray-600' : ''}
+                `}
+              >
+                {dia}
+                {isToday && (
+                  <span className="absolute bottom-1 w-1 h-1 rounded-full bg-gray-400"></span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* --- MODAL DE DETALHES (Mantido exatamente como o anterior) --- */}
+      {/* MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+          
+          {/* DIV PRINCIPAL DO MODAL COM O REF PARA O CANVAS */}
+          <div ref={modalRef} className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
             
-            {/* Header do Modal */}
             <div className="p-6 border-b border-gray-800 flex justify-between items-start">
               <div>
-                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                  <Calendar className="w-6 h-6 text-emerald-500" />
+                <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                  <Calendar className="w-5 h-5 md:w-6 md:h-6 text-emerald-500" />
                   {workoutDetails ? format(parseISO(workoutDetails.sessao.data_treino), "dd 'de' MMMM, yyyy", { locale: ptBR }) : 'Carregando...'}
                 </h2>
                 {workoutDetails && (
-                  <div className="flex items-center gap-4 mt-2 text-gray-400">
+                  <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-400">
                     <span className="flex items-center gap-1">
                       <Dumbbell className="w-4 h-4" /> 
                       {workoutDetails.sessao.dias_treino?.nome || 'Treino Extra'}
@@ -138,16 +342,48 @@ export default function History() {
                   </div>
                 )}
               </div>
-              <button 
-                onClick={() => setIsModalOpen(false)}
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
+              
+              {/* ÁREA DE BOTÕES DO MODAL (Ignorados no Print) */}
+              <div data-html2canvas-ignore="true" className="flex items-center gap-2">
+                
+                <button 
+                  onClick={handleCopyToWhatsApp}
+                  className="p-2 bg-gray-800 hover:bg-gray-700 text-emerald-500 rounded-md transition-colors border border-gray-700"
+                  title="Copiar Texto"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+
+                <button 
+                  onClick={handleDownloadImage}
+                  className="p-2 bg-gray-800 hover:bg-gray-700 text-blue-400 rounded-md transition-colors border border-gray-700"
+                  title="Baixar Imagem"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                </button>
+
+                <button 
+                  onClick={handleDownloadPDF}
+                  className="p-2 bg-gray-800 hover:bg-gray-700 text-red-400 rounded-md transition-colors border border-gray-700"
+                  title="Baixar PDF"
+                >
+                  <FileText className="w-4 h-4" />
+                </button>
+
+                {/* Separador visual antes do botão de fechar */}
+                <div className="w-px h-6 bg-gray-700 mx-1"></div>
+
+                <button 
+                  onClick={() => setIsModalOpen(false)}
+                  className="text-gray-400 hover:text-white transition-colors p-2 rounded-md hover:bg-gray-800"
+                  title="Fechar"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
 
-            {/* Corpo do Modal */}
-            <div className="p-6 overflow-y-auto space-y-6">
+            <div className="p-4 md:p-6 overflow-y-auto space-y-6">
               {isLoadingDetails ? (
                 <div className="text-center py-10 text-emerald-500 animate-pulse font-medium">
                   Buscando dados do treino...
@@ -155,16 +391,15 @@ export default function History() {
               ) : workoutDetails?.exercicios ? (
                 workoutDetails.exercicios.map((item: any, exIndex: number) => (
                   <div key={exIndex} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
-                    <h3 className="text-lg font-semibold text-white mb-1">
+                    <h3 className="text-base md:text-lg font-semibold text-white mb-1">
                       {item.exercicios?.nome}
                     </h3>
                     <span className="text-xs px-2 py-1 bg-gray-800 text-gray-400 rounded-md mb-4 inline-block">
                       {item.exercicios?.grupo_pai} | Foco: {item.exercicios?.musculo_primario}
                     </span>
 
-                    {/* Tabela de Séries */}
                     <div className="overflow-x-auto mt-2">
-                      <table className="w-full text-sm text-left">
+                      <table className="w-full text-sm text-left whitespace-nowrap">
                         <thead className="text-xs text-gray-400 border-b border-gray-700">
                           <tr>
                             <th className="pb-2 font-medium">Série</th>
@@ -186,11 +421,10 @@ export default function History() {
                       </table>
                     </div>
 
-                    {/* Observações */}
                     {item.observacoes && (
                       <div className="mt-4 p-3 bg-gray-900/50 rounded text-sm text-gray-400 flex items-start gap-2 border border-gray-800">
                         <MessageSquare className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />
-                        <p className="italic">"{item.observacoes}"</p>
+                        <p className="italic whitespace-pre-wrap">"{item.observacoes}"</p>
                       </div>
                     )}
                   </div>
@@ -199,7 +433,6 @@ export default function History() {
                 <p className="text-gray-400 text-center py-10">Não foi possível carregar os detalhes.</p>
               )}
             </div>
-            
           </div>
         </div>
       )}
