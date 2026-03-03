@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronLeft, Dumbbell, Clock, Activity, Calendar, 
-  AlertCircle, Trash2, Edit3, Check, X, Save, RefreshCw, Search
+  AlertCircle, Trash2, Edit3, Check, X, Save, RefreshCw, Search, Plus
 } from 'lucide-react';
 import api from '../services/api';
 import { toast } from 'sonner';
@@ -58,6 +58,17 @@ export default function WorkoutDetails() {
   const [substitutingExercise, setSubstitutingExercise] = useState<{diaId: string, ex: Exercicio} | null>(null);
   const [exerciseLibrary, setExerciseLibrary] = useState<any[]>([]);
   const [searchSub, setSearchSub] = useState('');
+
+  // === NOVOS ESTADOS PARA ADICIONAR ===
+  // Estados para Adição de Novo Dia
+  const [isAddingDay, setIsAddingDay] = useState(false);
+  const [newDayForm, setNewDayForm] = useState({ nome: 'Treino B', foco: '' });
+
+  // Estados para Adição de Novo Exercício
+  const [addingExerciseToDayId, setAddingExerciseToDayId] = useState<string | null>(null);
+  const [searchNewEx, setSearchNewEx] = useState('');
+  const [selectedNewEx, setSelectedNewEx] = useState<any | null>(null);
+  const [newExForm, setNewExForm] = useState({ series: 3, repeticoes_min: 8, repeticoes_max: 12, descanso_segundos: 60 });
 
   useEffect(() => {
     const fetchWorkoutDetails = async () => {
@@ -197,7 +208,77 @@ export default function WorkoutDetails() {
     }
   };
 
-  // ===========================================
+  // === FUNÇÕES DE EXCLUSÃO E ADIÇÃO (DIA E EXERCÍCIO) ===
+  const handleDeleteDay = async (diaId: string) => {
+    if (!window.confirm("Tem certeza que deseja excluir este dia inteiro de treino? Todos os exercícios dele serão apagados.")) return;
+    try {
+      await api.delete(`/workouts/days/${diaId}`);
+      toast.success("Dia de treino removido!");
+      
+      if (workout) {
+        setWorkout({
+          ...workout,
+          dias: workout.dias.filter(d => d.id !== diaId)
+        });
+      }
+    } catch (error) {
+      toast.error("Erro ao remover dia de treino.");
+    }
+  };
+
+  const handleAddDay = async () => {
+    if (!newDayForm.nome.trim()) return toast.error("O nome do dia é obrigatório.");
+    try {
+      const response = await api.post(`/workouts/${id}/days`, newDayForm);
+      toast.success("Novo dia adicionado!");
+      if (workout) {
+        setWorkout({ ...workout, dias: [...workout.dias, { ...response.data, exercicios: [] }] });
+      }
+      setIsAddingDay(false);
+      setNewDayForm({ nome: 'Novo Treino', foco: '' });
+    } catch (error) {
+      toast.error("Erro ao adicionar novo dia.");
+    }
+  };
+
+  const openAddExercise = async (diaId: string) => {
+    setAddingExerciseToDayId(diaId);
+    setSelectedNewEx(null);
+    setSearchNewEx('');
+    if (exerciseLibrary.length === 0) {
+      try {
+        const response = await api.get('/exercises');
+        setExerciseLibrary(response.data);
+      } catch (error) {
+        toast.error("Erro ao carregar biblioteca.");
+      }
+    }
+  };
+
+  const handleConfirmAddExercise = async (diaId: string) => {
+    try {
+      const payload = {
+        exercicio_id: selectedNewEx.id,
+        ...newExForm
+      };
+      const response = await api.post(`/workouts/days/${diaId}/exercises`, payload);
+      toast.success("Exercício adicionado!");
+      
+      if (workout) {
+        const newDias = workout.dias.map(d => {
+          if (d.id === diaId) {
+            return { ...d, exercicios: [...d.exercicios, response.data] };
+          }
+          return d;
+        });
+        setWorkout({ ...workout, dias: newDias });
+      }
+      setAddingExerciseToDayId(null);
+      setSelectedNewEx(null);
+    } catch (error) {
+      toast.error("Erro ao adicionar exercício.");
+    }
+  };
 
   if (loading) {
     return (
@@ -317,6 +398,14 @@ export default function WorkoutDetails() {
                   <p className="text-emerald-400 text-sm mt-1 font-medium">{dia.observacoes}</p>
                 )}
               </div>
+              {/* --- BOTÃO DE EXCLUIR O DIA --- */}
+              <button 
+                onClick={() => handleDeleteDay(dia.id)}
+                className="p-2 bg-red-500/10 text-red-400 rounded-lg border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors"
+                title="Excluir Dia de Treino"
+              >
+                <Trash2 size={20} />
+              </button>
             </div>
 
             <div className="p-5">
@@ -324,7 +413,6 @@ export default function WorkoutDetails() {
                 {dia.exercicios.map((ex, index) => (
                   <div key={ex.id} className="flex flex-col lg:flex-row lg:items-center justify-between bg-[#112218] p-4 rounded-xl border border-[#326747]/50 transition-colors gap-4">
                     
-                    {/* Exibe o número, nome e EQUIPAMENTO do exercício (Escondido se estiver na tela de substituição) */}
                     {substitutingExercise?.ex.id !== ex.id && (
                       <div className="flex items-center gap-4 flex-1">
                         <div className="bg-[#193324] text-emerald-400 w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0 border border-[#326747]">
@@ -457,11 +545,129 @@ export default function WorkoutDetails() {
 
                   </div>
                 ))}
+
+                {/* --- MODO INSERÇÃO DE NOVO EXERCÍCIO --- */}
+                {addingExerciseToDayId === dia.id ? (
+                  <div className="bg-[#112218] p-4 rounded-xl border border-dashed border-emerald-500/50 animate-in fade-in space-y-4">
+                    {!selectedNewEx ? (
+                      // 1. Busca o exercício
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 bg-[#193324] p-3 rounded-xl border border-emerald-500/30">
+                          <Search size={20} className="text-emerald-400" />
+                          <input 
+                            autoFocus
+                            type="text" 
+                            placeholder="Buscar exercício para adicionar..." 
+                            className="bg-transparent text-white outline-none w-full text-lg" 
+                            value={searchNewEx} 
+                            onChange={(e) => setSearchNewEx(e.target.value)} 
+                          />
+                          <button onClick={() => setAddingExerciseToDayId(null)} className="p-1 text-zinc-400 hover:text-white">
+                            <X size={20} />
+                          </button>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto bg-[#193324] rounded-xl border border-[#326747]">
+                          {exerciseLibrary
+                            .filter(libEx => libEx.nome.toLowerCase().includes(searchNewEx.toLowerCase()))
+                            .map(libEx => (
+                              <button 
+                                key={libEx.id}
+                                onClick={() => setSelectedNewEx(libEx)}
+                                className="w-full text-left p-3 hover:bg-emerald-500/10 text-zinc-300 hover:text-emerald-400 transition-colors border-b border-[#326747]/30 last:border-0 font-bold"
+                              >
+                                {libEx.nome}
+                              </button>
+                            ))
+                          }
+                        </div>
+                      </div>
+                    ) : (
+                      // 2. Define séries e reps do exercício escolhido
+                      <div className="flex flex-col gap-4">
+                        <div className="flex justify-between items-center">
+                          <h4 className="text-emerald-400 font-bold text-lg">Configurar: {selectedNewEx.nome}</h4>
+                          <button onClick={() => setSelectedNewEx(null)} className="text-sm text-zinc-400 hover:text-white underline">Voltar para busca</button>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                          <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
+                            <span className="text-xs text-[#92c9a8] uppercase font-bold">Séries</span>
+                            <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={newExForm.series} onChange={(e) => setNewExForm({...newExForm, series: Number(e.target.value)})} />
+                          </div>
+                          <div className="flex items-center gap-1 bg-[#193324] p-2 rounded-lg border border-[#326747]">
+                            <span className="text-xs text-[#92c9a8] uppercase font-bold mr-1">Reps</span>
+                            <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={newExForm.repeticoes_min} onChange={(e) => setNewExForm({...newExForm, repeticoes_min: Number(e.target.value)})} />
+                            <span className="text-[#326747]">-</span>
+                            <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={newExForm.repeticoes_max} onChange={(e) => setNewExForm({...newExForm, repeticoes_max: Number(e.target.value)})} />
+                          </div>
+                          <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
+                            <span className="text-xs text-[#92c9a8] uppercase font-bold">Rest</span>
+                            <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={newExForm.descanso_segundos} onChange={(e) => setNewExForm({...newExForm, descanso_segundos: Number(e.target.value)})} />
+                            <span className="text-xs font-bold text-[#326747]">s</span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                          <button onClick={() => handleConfirmAddExercise(dia.id)} className="bg-emerald-500 text-[#112218] px-4 py-2 rounded-lg font-bold hover:bg-emerald-400 transition-colors">
+                            Salvar Exercício
+                          </button>
+                          <button onClick={() => setAddingExerciseToDayId(null)} className="bg-[#193324] text-white px-4 py-2 rounded-lg font-bold hover:bg-[#326747] transition-colors">
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => openAddExercise(dia.id)}
+                    className="w-full py-3 border-2 border-dashed border-[#326747] rounded-xl text-emerald-500 font-bold flex items-center justify-center gap-2 hover:bg-emerald-500/10 hover:border-emerald-500 transition-colors"
+                  >
+                    <Plus size={20} /> Adicionar Exercício
+                  </button>
+                )}
               </div>
             </div>
 
           </div>
         ))}
+
+        {/* --- ADICIONAR NOVO DIA DE TREINO --- */}
+        {isAddingDay ? (
+          <div className="bg-[#193324] border border-emerald-500 rounded-2xl p-6 shadow-lg animate-in fade-in">
+            <h3 className="text-xl font-bold text-white mb-4">Adicionar Novo Dia</h3>
+            <div className="flex flex-col md:flex-row gap-4 mb-4">
+              <input 
+                type="text" 
+                placeholder="Ex: Treino C" 
+                className="bg-[#112218] text-white border border-[#326747] p-3 rounded-xl outline-none focus:border-emerald-500 flex-1 font-bold"
+                value={newDayForm.nome}
+                onChange={(e) => setNewDayForm({...newDayForm, nome: e.target.value})}
+              />
+              <input 
+                type="text" 
+                placeholder="Foco (Opcional). Ex: Pernas" 
+                className="bg-[#112218] text-white border border-[#326747] p-3 rounded-xl outline-none focus:border-emerald-500 flex-1"
+                value={newDayForm.foco}
+                onChange={(e) => setNewDayForm({...newDayForm, foco: e.target.value})}
+              />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={handleAddDay} className="bg-emerald-500 text-[#112218] px-6 py-2 rounded-xl font-bold hover:bg-emerald-400 transition-colors">
+                Salvar Novo Dia
+              </button>
+              <button onClick={() => setIsAddingDay(false)} className="bg-transparent border border-[#326747] text-zinc-300 px-6 py-2 rounded-xl font-bold hover:bg-[#326747] hover:text-white transition-colors">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button 
+            onClick={() => setIsAddingDay(true)}
+            className="w-full py-4 border border-[#326747] bg-[#112218] rounded-2xl text-[#92c9a8] font-bold text-lg flex items-center justify-center gap-2 hover:bg-[#193324] hover:text-white hover:border-emerald-500 transition-all shadow-lg"
+          >
+            <Plus size={24} /> Adicionar Novo Dia de Treino
+          </button>
+        )}
+
       </div>
     </div>
   );

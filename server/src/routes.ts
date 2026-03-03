@@ -20,7 +20,10 @@ import {
   deleteWorkout,
   updateExercise,
   removeExercise,
-  getWorkoutDayDetails // <--- NOVO IMPORT AQUI
+  getWorkoutDayDetails,
+  addDayToWorkout,     
+  addExerciseToDay,
+  deleteWorkoutDay  
 } from './controllers/workoutController';
 
 // IMPORTAÇÃO DO SEU NOVO SEGURANÇA 
@@ -65,6 +68,9 @@ router.put('/workouts/:id', updateWorkout);              // Edita nome/descriç�
 router.delete('/workouts/:id', deleteWorkout);           // Apaga treino inteiro
 router.put('/workouts/exercises/:id', updateExercise);   // Edita metas de um exercício
 router.delete('/workouts/exercises/:id', removeExercise);// Remove exercício de um dia
+router.post('/workouts/:id/days', addDayToWorkout);
+router.delete('/workouts/days/:id', deleteWorkoutDay);     
+router.post('/workouts/days/:id/exercises', addExerciseToDay); 
 
 //ROTA DE HISTÓRICO (Salvar Treino Realizado) 
 router.post('/history', saveWorkoutSession);

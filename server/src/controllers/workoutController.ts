@@ -416,3 +416,141 @@ export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ error: 'Erro interno' });
   }
 };
+
+// 9. ADICIONAR NOVO DIA DE TREINO
+export const addDayToWorkout = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params; // ID do treino
+  const { nome, foco } = req.body;
+  const userId = req.userId;
+
+  try {
+    // Validação de posse
+    const { data: treino } = await supabase
+      .from('treinos')
+      .select('id')
+      .eq('id', id)
+      .eq('usuario_id', userId)
+      .single();
+
+    if (!treino) return res.status(403).json({ error: 'Acesso negado.' });
+
+    // Pega a maior ordem_dia atual
+    const { data: maxDia } = await supabase
+      .from('dias_treino')
+      .select('ordem_dia')
+      .eq('treino_id', id)
+      .order('ordem_dia', { ascending: false })
+      .limit(1)
+      .single();
+
+    const nextOrdem = maxDia ? maxDia.ordem_dia + 1 : 1;
+
+    const { data: novoDia, error } = await supabase
+      .from('dias_treino')
+      .insert([{ treino_id: id, nome, foco, ordem_dia: nextOrdem }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Retorna formatado para o frontend anexar no estado
+    return res.status(201).json({ ...novoDia, exercicios: [] });
+  } catch (error: any) {
+    console.error('Erro ao adicionar dia:', error);
+    return res.status(500).json({ error: 'Erro interno ao adicionar dia.' });
+  }
+};
+
+// 10. ADICIONAR NOVO EXERCÍCIO A UM DIA
+export const addExerciseToDay = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params; // ID do dia_treino
+  const { exercicio_id, series, repeticoes_min, repeticoes_max, descanso_segundos } = req.body;
+  
+  try {
+    // Pega a maior ordem_execucao
+    const { data: maxEx } = await supabase
+      .from('exercicios_treino')
+      .select('ordem_execucao')
+      .eq('dia_treino_id', id)
+      .order('ordem_execucao', { ascending: false })
+      .limit(1)
+      .single();
+
+    const nextOrdem = maxEx ? maxEx.ordem_execucao + 1 : 1;
+
+    const { data: novaRelacao, error } = await supabase
+      .from('exercicios_treino')
+      .insert([{
+        dia_treino_id: id, 
+        exercicio_id, 
+        ordem_execucao: nextOrdem, 
+        series, 
+        repeticoes_min, 
+        repeticoes_max, 
+        descanso_segundos 
+      }])
+      .select(`
+        id, series, repeticoes_min, repeticoes_max, descanso_segundos, observacoes, ordem_execucao,
+        exercicios ( nome, equipamentos ( nome ) )
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Formata o retorno para dar o push direto no estado do React
+    const formatado = {
+      id: novaRelacao.id,
+      nome: (novaRelacao.exercicios as any).nome,
+      equipamento: (novaRelacao.exercicios as any)?.equipamentos?.nome || 'Peso do Corpo',
+      series: novaRelacao.series,
+      repeticoes_min: novaRelacao.repeticoes_min,
+      repeticoes_max: novaRelacao.repeticoes_max,
+      descanso_segundos: novaRelacao.descanso_segundos,
+      observacoes: novaRelacao.observacoes
+    };
+
+    return res.status(201).json(formatado);
+  } catch (error: any) {
+    console.error('Erro ao adicionar exercício:', error);
+    return res.status(500).json({ error: 'Erro interno ao adicionar exercício.' });
+  }
+};
+// 11. DELETAR UM DIA DE TREINO ESPECÍFICO
+export const deleteWorkoutDay = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params; // ID do dias_treino
+  const userId = req.userId;
+
+  try {
+    // 1. Validação de posse (Anti-IDOR)
+    const { data: authCheck, error: authError } = await supabase
+      .from('dias_treino')
+      .select(`
+        id,
+        treinos ( usuario_id )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (authError || !authCheck) {
+      return res.status(404).json({ error: 'Dia de treino não encontrado.' });
+    }
+
+    const donoId = (authCheck as any)?.treinos?.usuario_id;
+    
+    if (donoId !== userId) {
+      return res.status(403).json({ error: 'Acesso negado. Você não tem permissão para remover este dia.' });
+    }
+
+    // 2. Deleta o dia (a deleção em cascata do banco apaga os exercicios_treino)
+    const { error } = await supabase
+      .from('dias_treino')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    return res.status(200).json({ message: 'Dia de treino removido com sucesso' });
+  } catch (error: any) {
+    console.error('Erro ao remover dia de treino:', error);
+    return res.status(500).json({ error: 'Erro interno ao remover dia de treino.' });
+  }
+};
