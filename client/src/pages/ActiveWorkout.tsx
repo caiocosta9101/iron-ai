@@ -137,22 +137,42 @@ export default function ActiveWorkout() {
   }, [id, navigate]);
 
   // --- CRONÔMETROS ---
-  useEffect(() => {
-    let interval: any;
-    // Só conta o tempo total se o treino tiver sido iniciado
-    if (isWorkoutStarted) {
-      interval = setInterval(() => setTempoTotal(prev => prev + 1), 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isWorkoutStarted]);
+  const lastTickTreino = useRef<number>(Date.now());
+  const lastTickDescanso = useRef<number>(Date.now());
 
-  useEffect(() => {
-    let interval: any;
-    if (timerDescansoAtivo) {
-      interval = setInterval(() => setTempoDescanso(prev => prev + 1), 1000);
-    }
-    return () => clearInterval(interval);
-  }, [timerDescansoAtivo]);
+  useEffect(() => {
+    let interval: any;
+    if (isWorkoutStarted) {
+      lastTickTreino.current = Date.now();
+      interval = setInterval(() => {
+        const now = Date.now();
+        const diffSegundos = Math.round((now - lastTickTreino.current) / 1000);
+        
+        if (diffSegundos > 0) {
+          setTempoTotal(prev => prev + diffSegundos);
+          lastTickTreino.current = now;
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isWorkoutStarted]);
+
+  useEffect(() => {
+    let interval: any;
+    if (timerDescansoAtivo) {
+      lastTickDescanso.current = Date.now();
+      interval = setInterval(() => {
+        const now = Date.now();
+        const diffSegundos = Math.round((now - lastTickDescanso.current) / 1000);
+        
+        if (diffSegundos > 0) {
+          setTempoDescanso(prev => prev + diffSegundos);
+          lastTickDescanso.current = now;
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [timerDescansoAtivo]);
 
   const formataTempo = (segundos: number) => {
     const min = Math.floor(segundos / 60);
