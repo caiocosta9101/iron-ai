@@ -3,48 +3,48 @@ import React, { useEffect, useState } from 'react';
 import { 
   Play, BrainCircuit, TrendingUp, Dumbbell as GymIcon, 
   Loader2, History, ArrowUpRight, CheckCircle2, XCircle, 
-  Calendar, Zap 
+  Calendar, Zap, ChevronLeft, ChevronRight 
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom'; 
 import { toast } from 'sonner'; 
 import api from '../services/api';
 
-// Tipagem do que vem do Backend (DashboardController)
+// --- TIPAGEM COMPLETA DO BACKEND ---
+interface LoadSuggestion { exercise: string; weight: string; gain: string; }
+
+interface SessionData {
+  id: string; programName: string; name: string; focus: string;
+  estimatedTime: number; intensity: string;
+  loadSuggestions: LoadSuggestion[];
+}
+
+interface HistoryData {
+  id: string; dia_treino_id: string; name: string;
+  date: string; duration: string; volume: string; statusColor: string;
+}
+
 interface DashboardData {
-  name: string;
-  nextSession: {
-    id: string;
-    programName: string;
-    name: string;
-    focus: string;
-    estimatedTime: number;
-    intensity: string;
-  } | null;
+  name: string; suggestedSessionId: string | null;
+  sessions: SessionData[]; history: HistoryData[];
 }
 
 export const Dashboard: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   
-  // 1. Detecta se a IA mandou um treino novo pra cá (Fluxo de Criação)
   const newWorkoutFromAI = location.state?.newWorkout;
 
   const [loading, setLoading] = useState(false);
   const [userName, setUserName] = useState("Campeão");
   const [currentDate, setCurrentDate] = useState("");
   
-  // State para o "Próximo Treino da Fila" vindo do Backend
-  const [nextWorkout, setNextWorkout] = useState<DashboardData['nextSession']>(null);
-
-  // Dados Mockados de Histórico (Manteremos visuais por enquanto até ligarmos essa parte)
-  const [activities] = useState([
-    { id: 1, name: 'Membros Inferiores B', date: 'Ontem, 16:45', duration: '62 min', volume: '4.250 kg', statusColor: 'bg-[#13ec6a]' },
-    { id: 2, name: 'Cardio LISS', date: 'Sábado, 09:00', duration: '45 min', volume: '--', statusColor: 'bg-slate-400' },
-    { id: 3, name: 'Costas e Bíceps A', date: 'Sexta, 18:20', duration: '58 min', volume: '3.800 kg', statusColor: 'bg-[#13ec6a]' },
-  ]);
+  // --- ESTADOS GLOBAIS E DO CARROSSEL ---
+  const [sessions, setSessions] = useState<SessionData[]>([]);
+  const [globalHistory, setGlobalHistory] = useState<HistoryData[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [suggestedId, setSuggestedId] = useState<string | null>(null);
 
   useEffect(() => {
-    // 1. Formata Data
     const now = new Date();
     const formatted = new Intl.DateTimeFormat('pt-BR', { 
       weekday: 'long', 
@@ -56,13 +56,20 @@ export const Dashboard: React.FC = () => {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        
-        // 2. Busca tudo numa única chamada ao Controller inteligente
         const response = await api.get<DashboardData>('/dashboard');
         
         if (response.data) {
           setUserName(response.data.name);
-          setNextWorkout(response.data.nextSession);
+          setGlobalHistory(response.data.history || []);
+          
+          if (response.data.sessions && response.data.sessions.length > 0) {
+            setSessions(response.data.sessions);
+            setSuggestedId(response.data.suggestedSessionId);
+            
+            // Define o treino inicial na tela como sendo o sugerido pelo backend
+            const sugIndex = response.data.sessions.findIndex(s => s.id === response.data.suggestedSessionId);
+            setCurrentIndex(sugIndex !== -1 ? sugIndex : 0);
+          }
         }
 
       } catch (err) {
@@ -73,23 +80,35 @@ export const Dashboard: React.FC = () => {
       }
     };
 
-    // Só busca se não estivermos no modo "Review de IA"
     if (!newWorkoutFromAI) {
       fetchDashboardData();
     }
   }, [newWorkoutFromAI]);
 
-  // --- FUNÇÃO PARA INICIAR TREINO ---
+  // --- FUNÇÕES DE NAVEGAÇÃO DO CARROSSEL ---
+  const handlePrevWorkout = () => {
+    setCurrentIndex((prev) => (prev === 0 ? sessions.length - 1 : prev - 1));
+  };
+
+  const handleNextWorkout = () => {
+    setCurrentIndex((prev) => (prev === sessions.length - 1 ? 0 : prev + 1));
+  };
+
+  // --- DATA BINDING (Vínculo de Dados Relativos ao Treino Atual) ---
+  const currentWorkout = sessions[currentIndex];
+  const isSuggested = currentWorkout?.id === suggestedId;
+  const filteredHistory = globalHistory.filter(h => h.dia_treino_id === currentWorkout?.id);
+
+  // --- FUNÇÕES DE AÇÃO ---
   const handleStartWorkout = () => {
-    if (nextWorkout?.id) {
-        navigate(`/workout/active/${nextWorkout.id}`);
+    if (currentWorkout?.id) {
+        navigate(`/workout/active/${currentWorkout.id}`);
     } else {
         toast.error("Nenhum treino configurado.");
         navigate('/new-workout'); 
     }
   };
 
-  // --- FUNÇÃO PARA SALVAR O TREINO DA IA ---
   const handleSaveWorkout = () => {
     toast.success("Plano de treino ativado com sucesso!");
     navigate('/my-workouts', { 
@@ -97,7 +116,6 @@ export const Dashboard: React.FC = () => {
     });
   };
 
-  // --- FUNÇÃO PARA DESCARTAR SUGESTÃO ---
   const handleDiscard = () => {
       navigate('/dashboard', { state: {} });
       toast.info("Sugestão descartada.");
@@ -130,10 +148,9 @@ export const Dashboard: React.FC = () => {
         </div>
       </header>
 
-      {/* === ÁREA PRINCIPAL === */}
       {newWorkoutFromAI ? (
         
-        /* === CARTÃO DE PREVIEW DA IA (QUANDO VEM DO WIZARD) === */
+        /* === CARTÃO DE PREVIEW DA IA (MANTIDO INTACTO) === */
         <section className="bg-gradient-to-br from-[#193324] to-[#102217] border border-[#13ec6a] rounded-2xl p-6 lg:p-8 shadow-[0_0_30px_rgba(19,236,106,0.1)] relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-[#13ec6a] text-[#112218] text-xs font-bold px-3 py-1 rounded-bl-xl z-10">
                 SUGESTÃO IRON AI
@@ -156,10 +173,8 @@ export const Dashboard: React.FC = () => {
                             <span className="text-[10px] bg-[#13ec6a]/20 text-[#13ec6a] px-2 py-1 rounded uppercase font-bold">{dia.foco || "Geral"}</span>
                         </div>
                         
-                        {/* Scroll Container adicionado aqui */}
                         <div className="overflow-y-auto pr-2 custom-scrollbar">
                             <ul className="space-y-3">
-                                {/* O slice(0, 4) foi removido! */}
                                 {dia.exercicios.map((ex: any, idx: number) => (
                                     <li key={idx} className="text-sm text-zinc-300 flex items-start gap-2 border-b border-white/5 pb-2 last:border-0">
                                         <div className="w-1.5 h-1.5 bg-[#13ec6a] rounded-full mt-1.5 shrink-0" />
@@ -177,7 +192,6 @@ export const Dashboard: React.FC = () => {
                 ))}
             </div>
 
-            {/* Estilo embutido pro scrollbar fininho no preview */}
             <style>{`
                 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -203,52 +217,78 @@ export const Dashboard: React.FC = () => {
 
       ) : (
 
-        /* === DASHBOARD PADRÃO (DIA A DIA) === */
+        /* === DASHBOARD PADRÃO (SINCRONIZADO) === */
         <>
-            {/* 1. Hero Card - PRÓXIMO TREINO DA FILA */}
+            {/* 1. Hero Card - CARROSSEL */}
             <section className="bg-[#193324] rounded-xl overflow-hidden border border-white/5 flex flex-col lg:flex-row shadow-2xl relative">
-                {/* Ícone de Fundo Decorativo */}
                 <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
                     <ArrowUpRight size={100} className="text-[#13ec6a]" />
                 </div>
 
-                <div className="w-full lg:w-1/3 bg-slate-800 h-48 lg:h-auto relative">
+                <div className="w-full lg:w-1/3 bg-slate-800 h-48 lg:h-auto relative group">
                     <div className="absolute inset-0 bg-gradient-to-r from-[#112218] to-[#193324]" />
-                    <div className="absolute inset-0 flex items-center justify-center text-[#13ec6a]/20">
+                    <div className="absolute inset-0 flex items-center justify-center text-[#13ec6a]/20 group-hover:scale-110 transition-transform duration-500">
                         <GymIcon size={80} />
                     </div>
                 </div>
                 
                 <div className="p-6 lg:p-8 flex-1 flex flex-col justify-center gap-4 relative z-10">
-                    <div className="flex items-center gap-3">
-                         <span className="text-[#13ec6a] text-xs font-bold uppercase tracking-widest bg-[#13ec6a]/10 px-3 py-1 rounded-full w-fit">
-                            Próximo na Sequência
-                        </span>
-                        {nextWorkout && (
-                          <span className="text-[#92c9a8] text-xs font-bold uppercase tracking-widest border border-[#92c9a8]/20 px-3 py-1 rounded-full w-fit">
-                            {nextWorkout.programName}
-                          </span>
+                    
+                    {/* Controles do Carrossel */}
+                    <div className="flex justify-between items-start">
+                        <div className="flex flex-wrap items-center gap-3">
+                             {isSuggested ? (
+                                <span className="text-[#13ec6a] text-xs font-bold uppercase tracking-widest bg-[#13ec6a]/10 px-3 py-1 rounded-full w-fit flex items-center gap-1">
+                                    <BrainCircuit size={12} /> Sugerido para Hoje
+                                </span>
+                             ) : (
+                                <span className="text-slate-400 text-xs font-bold uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full w-fit">
+                                    Treino Selecionado
+                                </span>
+                             )}
+                            
+                            {currentWorkout && (
+                              <span className="text-[#92c9a8] text-xs font-bold uppercase tracking-widest border border-[#92c9a8]/20 px-3 py-1 rounded-full w-fit">
+                                {currentWorkout.programName}
+                              </span>
+                            )}
+                        </div>
+
+                        {/* Setinhas */}
+                        {sessions.length > 1 && (
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={handlePrevWorkout}
+                                    className="p-2 rounded-full bg-white/5 text-white hover:bg-[#13ec6a]/20 hover:text-[#13ec6a] transition-colors"
+                                >
+                                    <ChevronLeft size={20} />
+                                </button>
+                                <button 
+                                    onClick={handleNextWorkout}
+                                    className="p-2 rounded-full bg-white/5 text-white hover:bg-[#13ec6a]/20 hover:text-[#13ec6a] transition-colors"
+                                >
+                                    <ChevronRight size={20} />
+                                </button>
+                            </div>
                         )}
                     </div>
                    
-                    {/* Nome Dinâmico do Treino */}
                     <div>
                       <h3 className="text-2xl lg:text-3xl font-bold text-white">
-                          {nextWorkout ? nextWorkout.name : "Nenhum treino ativo"}
+                          {currentWorkout ? currentWorkout.name : "Nenhum treino ativo"}
                       </h3>
                       <p className="text-[#92c9a8] mt-1">
-                        {nextWorkout?.focus || "Crie um plano para começar sua jornada."}
+                        {currentWorkout?.focus || "Crie um plano para começar sua jornada."}
                       </p>
                     </div>
                     
-                    {nextWorkout ? (
+                    {currentWorkout ? (
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pt-4 border-t border-white/10">
                           <div className="flex gap-8">
-                              <StatItem label="Estimativa" value={`${nextWorkout.estimatedTime} min`} icon={<Calendar size={14}/>} />
-                              <StatItem label="Intensidade" value={nextWorkout.intensity} icon={<Zap size={14}/>} />
+                              <StatItem label="Estimativa" value={`${currentWorkout.estimatedTime} min`} icon={<Calendar size={14}/>} />
+                              <StatItem label="Intensidade" value={currentWorkout.intensity} icon={<Zap size={14}/>} />
                           </div>
                           
-                          {/* Botão de Ação Principal */}
                           <button 
                               onClick={handleStartWorkout}
                               className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-[#13ec6a] text-[#112218] rounded-full text-lg font-black hover:scale-105 transition-all shadow-lg shadow-[#13ec6a]/20 group"
@@ -261,7 +301,7 @@ export const Dashboard: React.FC = () => {
                       <div className="pt-4 border-t border-white/10">
                          <button 
                               onClick={() => navigate('/new-workout')}
-                              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full transition-colors"
+                              className="bg-[#13ec6a] hover:bg-[#10d460] text-[#112218] font-bold py-3 px-6 rounded-full transition-colors"
                           >
                               Criar Primeiro Treino
                           </button>
@@ -270,72 +310,88 @@ export const Dashboard: React.FC = () => {
                 </div>
             </section>
 
-            {/* 2. Cards de Insights */}
-            <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-[#193324] border border-[#326747] p-6 lg:p-8 rounded-xl">
-                    <div className="flex justify-between items-center mb-6">
-                        <div className="flex items-center gap-2">
-                            <BrainCircuit className="text-[#13ec6a]" size={24} />
-                            <p className="text-[#92c9a8] text-sm font-medium uppercase tracking-widest">Consistência</p>
+            {/* Renderiza widgets APENAS se houver treino selecionado */}
+            {currentWorkout && (
+                <>
+                    {/* 2. Cards de Insights */}
+                    <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-[#193324] border border-[#326747] p-6 lg:p-8 rounded-xl">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center gap-2">
+                                    <BrainCircuit className="text-[#13ec6a]" size={24} />
+                                    <p className="text-[#92c9a8] text-sm font-medium uppercase tracking-widest">Consistência</p>
+                                </div>
+                                <div className="flex items-center gap-1 text-[#13ec6a] font-bold">
+                                    <TrendingUp size={16} />
+                                    <span>Ótima</span>
+                                </div>
+                            </div>
+                            <div className="h-32 flex items-center justify-center text-slate-500 italic border border-white/5 rounded-lg border-dashed text-sm">
+                                [Gráfico de Frequência Semanal]
+                            </div>
                         </div>
-                        <div className="flex items-center gap-1 text-[#13ec6a] font-bold">
-                            <TrendingUp size={16} />
-                            <span>Ótima</span>
+
+                        <div className="bg-[#193324] border border-[#326747] p-6 lg:p-8 rounded-xl space-y-4">
+                            <p className="text-[#92c9a8] text-sm font-medium uppercase tracking-widest mb-2">Sugestões de Carga (IA)</p>
+                            
+                            {/* CAIXAS DE CARGA SINCRONIZADAS COM O BANCO */}
+                            {currentWorkout.loadSuggestions.map((sug, idx) => (
+                                <LoadBox key={idx} exercise={sug.exercise} weight={sug.weight} gain={sug.gain} />
+                            ))}
                         </div>
-                    </div>
-                    <div className="h-32 flex items-center justify-center text-slate-500 italic border border-white/5 rounded-lg border-dashed text-sm">
-                        [Gráfico de Frequência Semanal]
-                    </div>
-                </div>
+                    </section>
 
-                <div className="bg-[#193324] border border-[#326747] p-6 lg:p-8 rounded-xl space-y-4">
-                    <p className="text-[#92c9a8] text-sm font-medium uppercase tracking-widest mb-2">Sugestões de Carga (IA)</p>
-                    <LoadBox exercise="Supino Inclinado" weight="30kg" gain="+2.5kg" />
-                    <LoadBox exercise="Tríceps Corda" weight="20kg" gain="+5kg" />
-                </div>
-            </section>
-
-            {/* 3. Tabela de Histórico (Dados Mockados) */}
-            <section className="pb-10">
-                <div className="flex items-center gap-3 mb-6">
-                    <History className="text-[#13ec6a]" size={24} />
-                    <h2 className="text-xl lg:text-2xl font-bold text-white">Últimas Sessões</h2>
-                </div>
-                
-                <div className="bg-[#193324] rounded-xl border border-white/5 overflow-hidden">
-                    <div className="overflow-x-auto">
-                    <table className="w-full text-left min-w-[600px]">
-                        <thead className="bg-white/5 text-[#92c9a8] text-[10px] uppercase font-bold tracking-widest">
-                        <tr>
-                            <th className="px-6 py-4">Treino</th>
-                            <th className="px-6 py-4">Data</th>
-                            <th className="px-6 py-4">Duração</th>
-                            <th className="px-6 py-4">Volume</th>
-                            <th className="px-6 py-4 text-right">Ação</th>
-                        </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                        {activities.map((act) => (
-                            <tr key={act.id} className="hover:bg-white/5 transition-all">
-                                <td className="px-6 py-4 font-bold text-sm text-white">
-                                    <div className="flex items-center gap-3">
-                                    <div className={`w-2 h-2 rounded-full ${act.statusColor}`} />
-                                    {act.name}
-                                    </div>
-                                </td>
-                                <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.date}</td>
-                                <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.duration}</td>
-                                <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.volume}</td>
-                                <td className="px-6 py-4 text-right">
-                                    <ArrowUpRight className="inline text-[#13ec6a]" size={16} />
-                                </td>
-                            </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                    </div>
-                </div>
-            </section>
+                    {/* 3. Tabela de Histórico (FILTRADA REAL) */}
+                    <section className="pb-10">
+                        <div className="flex items-center gap-3 mb-6">
+                            <History className="text-[#13ec6a]" size={24} />
+                            <h2 className="text-xl lg:text-2xl font-bold text-white">Últimas Vezes Neste Treino</h2>
+                        </div>
+                        
+                        <div className="bg-[#193324] rounded-xl border border-white/5 overflow-hidden">
+                            <div className="overflow-x-auto">
+                            <table className="w-full text-left min-w-[600px]">
+                                <thead className="bg-white/5 text-[#92c9a8] text-[10px] uppercase font-bold tracking-widest">
+                                <tr>
+                                    <th className="px-6 py-4">Treino</th>
+                                    <th className="px-6 py-4">Data</th>
+                                    <th className="px-6 py-4">Duração</th>
+                                    <th className="px-6 py-4">Volume</th>
+                                    <th className="px-6 py-4 text-right">Ação</th>
+                                </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                {filteredHistory.length > 0 ? (
+                                    filteredHistory.map((act) => (
+                                        <tr key={act.id} className="hover:bg-white/5 transition-all">
+                                            <td className="px-6 py-4 font-bold text-sm text-white">
+                                                <div className="flex items-center gap-3">
+                                                <div className={`w-2 h-2 rounded-full ${act.statusColor}`} />
+                                                {act.name}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.date}</td>
+                                            <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.duration}</td>
+                                            <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.volume}</td>
+                                            <td className="px-6 py-4 text-right">
+                                                <ArrowUpRight className="inline text-[#13ec6a]" size={16} />
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={5} className="px-6 py-8 text-center text-slate-500 text-sm italic">
+                                            Nenhum histórico registrado para este treino ainda. Comece hoje!
+                                        </td>
+                                    </tr>
+                                )}
+                                </tbody>
+                            </table>
+                            </div>
+                        </div>
+                    </section>
+                </>
+            )}
         </>
       )}
     </div>
