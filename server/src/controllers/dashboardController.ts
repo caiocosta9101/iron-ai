@@ -1,3 +1,4 @@
+// server/src/controllers/dashboardController.ts
 import { Response } from 'express';
 import { supabase } from '../db';
 import { AuthRequest } from '../middlewares/authMiddleware';
@@ -24,12 +25,13 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
       return res.json({ name: userName, suggestedSessionId: null, sessions: [], history: [] });
     }
 
-    // Busca os dias e já faz um JOIN para trazer os exercícios daquele dia
+    // Busca os dias, os exercícios vinculados e OBRIGATORIAMENTE o exercicio_id para fazermos o match das cargas
     const { data: workoutDays, error: daysError } = await supabase
       .from('dias_treino')
       .select(`
         id, nome, foco, ordem_dia,
         exercicios_treino (
+          exercicio_id,
           exercicios ( nome )
         )
       `)
@@ -40,19 +42,40 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
       return res.json({ name: userName, suggestedSessionId: null, sessions: [], history: [] });
     }
 
-    // Busca o histórico real do usuário
+    // Busca o histórico real de sessões e as execuções vinculadas para calcular os PRs
     const { data: history } = await supabase
       .from('historico_sessoes')
       .select(`
         id, dia_treino_id, data_treino, duracao_real_minutos,
-        dias_treino ( nome )
+        dias_treino ( nome ),
+        historico_execucao_exercicio (
+          exercicio_id,
+          cargas_kg
+        )
       `)
       .eq('usuario_id', userId)
       .eq('finalizado', true)
       .order('data_treino', { ascending: false })
-      .limit(15); // Traz as últimas 15 sessões
+      .limit(15); 
 
-    // Lógica do Treino Mais Atrasado
+    // --- LÓGICA DE CÁLCULO DE CARGAS MÁXIMAS (PRs) ---
+    const maxLoadsMap: Record<string, number> = {};
+
+    history?.forEach(sessao => {
+      // Como cargas_kg é um array numérico no PostgreSQL, precisamos varrê-lo
+      sessao.historico_execucao_exercicio?.forEach(exec => {
+        const cargas = exec.cargas_kg || [];
+        // Encontra a maior carga levantada nesta execução específica
+        const maxInExec = cargas.length > 0 ? Math.max(...cargas) : 0;
+        
+        // Atualiza o dicionário global se for o maior valor já visto para este exercício
+        if (!maxLoadsMap[exec.exercicio_id] || maxInExec > maxLoadsMap[exec.exercicio_id]) {
+          maxLoadsMap[exec.exercicio_id] = maxInExec;
+        }
+      });
+    });
+
+    // --- LÓGICA DO TREINO MAIS ATRASADO ---
     const ultimasExecucoes: Record<string, number> = {};
     workoutDays.forEach(day => { ultimasExecucoes[day.id] = 0; });
 
@@ -74,22 +97,26 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
       }
     });
 
-    // Formata as sessões embutindo as sugestões de carga dinâmicas
+    // Formata as sessões embutindo as cargas máximas reais de TODOS os exercícios do dia
     const formattedSessions = workoutDays.map(day => {
-      // Pega o nome dos dois primeiros exercícios reais deste treino
-      const exercicios = day.exercicios_treino?.map((et: any) => et.exercicios?.nome) || [];
+      const maxLoads = day.exercicios_treino?.map((et: any) => {
+        const exName = et.exercicios?.nome || 'Exercício';
+        const pr = maxLoadsMap[et.exercicio_id];
+        
+        return {
+          exercise: exName,
+          maxWeight: pr ? `${pr} kg` : '--' // Se não houver PR registrado, mostra '--'
+        };
+      }) || [];
       
       return {
         id: day.id,
         programName: activeProgram.nome,
         name: day.nome,
         focus: day.foco,
-        estimatedTime: 60,
+        estimatedTime: 60, // Pode ser dinâmico no futuro
         intensity: "Alta",
-        loadSuggestions: [
-          { exercise: exercicios[0] || 'Exercício Principal', weight: 'Última: --', gain: 'IA Ativa' },
-          { exercise: exercicios[1] || 'Exercício Secundário', weight: 'Última: --', gain: 'IA Ativa' }
-        ]
+        maxLoads: maxLoads // Substituímos loadSuggestions por maxLoads
       };
     });
 

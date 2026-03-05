@@ -10,12 +10,15 @@ import { toast } from 'sonner';
 import api from '../services/api';
 
 // --- TIPAGEM COMPLETA DO BACKEND ---
-interface LoadSuggestion { exercise: string; weight: string; gain: string; }
+interface ExerciseMaxLoad { 
+  exercise: string; 
+  maxWeight: string; 
+}
 
 interface SessionData {
   id: string; programName: string; name: string; focus: string;
   estimatedTime: number; intensity: string;
-  loadSuggestions: LoadSuggestion[];
+  maxLoads: ExerciseMaxLoad[]; // <-- Atualizado aqui
 }
 
 interface HistoryData {
@@ -134,6 +137,14 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="space-y-6 lg:space-y-8 animate-in fade-in duration-500 pb-10">
       
+      {/* Estilos Globais do Componente */}
+      <style>{`
+          .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(19, 236, 106, 0.2); border-radius: 10px; }
+          .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(19, 236, 106, 0.5); }
+      `}</style>
+
       {/* Cabeçalho */}
       <header className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-end">
         <div className="flex items-center gap-4">
@@ -150,7 +161,7 @@ export const Dashboard: React.FC = () => {
 
       {newWorkoutFromAI ? (
         
-        /* === CARTÃO DE PREVIEW DA IA (MANTIDO INTACTO) === */
+        /* === CARTÃO DE PREVIEW DA IA === */
         <section className="bg-gradient-to-br from-[#193324] to-[#102217] border border-[#13ec6a] rounded-2xl p-6 lg:p-8 shadow-[0_0_30px_rgba(19,236,106,0.1)] relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-[#13ec6a] text-[#112218] text-xs font-bold px-3 py-1 rounded-bl-xl z-10">
                 SUGESTÃO IRON AI
@@ -191,13 +202,6 @@ export const Dashboard: React.FC = () => {
                     </div>
                 ))}
             </div>
-
-            <style>{`
-                .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(19, 236, 106, 0.2); border-radius: 10px; }
-                .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(19, 236, 106, 0.5); }
-            `}</style>
 
             <div className="flex gap-4 relative z-10">
                 <button 
@@ -331,17 +335,28 @@ export const Dashboard: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="bg-[#193324] border border-[#326747] p-6 lg:p-8 rounded-xl space-y-4">
-                            <p className="text-[#92c9a8] text-sm font-medium uppercase tracking-widest mb-2">Sugestões de Carga (IA)</p>
+                        {/* NOVO CARD: CARGAS MÁXIMAS */}
+                        <div className="bg-[#193324] border border-[#326747] p-6 lg:p-8 rounded-xl flex flex-col max-h-[350px]">
+                            <div className="flex items-center gap-2 mb-4 shrink-0">
+                                <GymIcon className="text-[#13ec6a]" size={24} />
+                                <p className="text-[#92c9a8] text-sm font-medium uppercase tracking-widest">Cargas Máximas (PRs)</p>
+                            </div>
                             
-                            {/* CAIXAS DE CARGA SINCRONIZADAS COM O BANCO */}
-                            {currentWorkout.loadSuggestions.map((sug, idx) => (
-                                <LoadBox key={idx} exercise={sug.exercise} weight={sug.weight} gain={sug.gain} />
-                            ))}
+                            <div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar flex-1">
+                                {currentWorkout.maxLoads?.length > 0 ? (
+                                    currentWorkout.maxLoads.map((item, idx) => (
+                                        <MaxLoadBox key={idx} exercise={item.exercise} maxWeight={item.maxWeight} />
+                                    ))
+                                ) : (
+                                    <div className="h-full flex items-center justify-center text-[#92c9a8] italic text-sm text-center">
+                                        Nenhum recorde registrado para este treino ainda.
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </section>
 
-                    {/* 3. Tabela de Histórico (FILTRADA REAL) */}
+                    {/* 3. Tabela de Histórico */}
                     <section className="pb-10">
                         <div className="flex items-center gap-3 mb-6">
                             <History className="text-[#13ec6a]" size={24} />
@@ -409,17 +424,20 @@ const StatItem = ({ label, value, icon }: { label: string, value: string, icon?:
   </div>
 );
 
-const LoadBox = ({ exercise, weight, gain }: { exercise: string, weight: string, gain: string }) => (
+// --- NOVO COMPONENTE: MaxLoadBox ---
+const MaxLoadBox = ({ exercise, maxWeight }: { exercise: string, maxWeight: string }) => (
   <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5">
     <div className="flex items-center gap-4">
-      <div className="w-10 h-10 rounded-full bg-[#13ec6a]/20 flex items-center justify-center text-[#13ec6a]">
+      <div className="w-10 h-10 rounded-full bg-[#13ec6a]/20 flex items-center justify-center text-[#13ec6a] shrink-0">
         <GymIcon size={20} />
       </div>
       <div>
-        <p className="text-sm font-bold text-white">{exercise}</p>
-        <p className="text-[10px] text-[#92c9a8]">ATUAL: {weight}</p>
+        <p className="text-sm font-bold text-white leading-tight">{exercise}</p>
       </div>
     </div>
-    <span className="text-[#13ec6a] font-black">{gain}</span>
+    <div className="flex flex-col items-end shrink-0 ml-2">
+        <span className="text-[10px] text-[#92c9a8] uppercase tracking-widest">PR / Máx</span>
+        <span className="text-[#13ec6a] font-black">{maxWeight}</span>
+    </div>
   </div>
 );

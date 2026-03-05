@@ -1,3 +1,4 @@
+// client/src/pages/History.tsx
 import { useEffect, useState, useRef } from 'react';
 import { 
   format, getDaysInMonth, getDay, parseISO, 
@@ -6,7 +7,8 @@ import {
 import { ptBR } from 'date-fns/locale';
 import { 
   X, Clock, Dumbbell, Calendar, MessageSquare, 
-  ChevronLeft, ChevronRight, Copy, Image as ImageIcon, FileText 
+  ChevronLeft, ChevronRight, Copy, Image as ImageIcon, FileText, 
+  FileJson, FileCode2 // Ícones novos importados
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../services/api';
@@ -92,34 +94,93 @@ export default function History() {
     });
   };
 
+  // 1. Nova Função: Exportar para Markdown
+  const handleCopyMarkdown = () => {
+    if (!workoutDetails) return;
+
+    const dataFormatada = format(parseISO(workoutDetails.sessao.data_treino), "dd/MM/yyyy");
+    const nomeTreino = workoutDetails.sessao.dias_treino?.nome || 'Treino Extra';
+    const duracao = workoutDetails.sessao.duracao_real_minutos;
+
+    let md = `# Histórico de Treino: ${nomeTreino}\n`;
+    md += `**Data:** ${dataFormatada} | **Duração:** ${duracao} min\n\n`;
+
+    workoutDetails.exercicios.forEach((item: any) => {
+      md += `### ${item.exercicios?.nome}\n`;
+      md += `*${item.exercicios?.grupo_pai} | Foco: ${item.exercicios?.musculo_primario}*\n\n`;
+      
+      // Cabeçalho da tabela com espaçamento fixo
+      md += `| Série | Carga   | Repetições | Descanso |\n`;
+      md += `| :---: | :-----: | :--------: | :------: |\n`;
+      
+      item.cargas_kg.forEach((carga: number, index: number) => {
+        const reps = item.repeticoes[index];
+        const descanso = formatTime(item.descansos_segundos[index]);
+        
+        // Formata as variáveis adicionando espaços (padding) para alinhar as colunas
+        const colSerie = String(index + 1).padEnd(5);
+        const colCarga = `${carga} kg`.padEnd(7);
+        const colReps = String(reps).padEnd(10);
+        const colDesc = String(descanso).padEnd(8);
+
+        md += `| ${colSerie} | ${colCarga} | ${colReps} | ${colDesc} |\n`;
+      });
+
+      if (item.observacoes) {
+        md += `\n> **Observação:** ${item.observacoes}\n`;
+      }
+      md += `\n---\n\n`;
+    });
+
+    navigator.clipboard.writeText(md).then(() => {
+      toast.success("Markdown copiado para a área de transferência!");
+    }).catch(err => {
+      console.error('Erro ao copiar Markdown:', err);
+      toast.error("Erro ao copiar o Markdown.");
+    });
+  };
+
+  // 2. Nova Função: Exportar para JSON (Download)
+  const handleDownloadJSON = () => {
+    if (!workoutDetails) return;
+
+    const jsonString = JSON.stringify(workoutDetails, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    const dataFormatada = format(parseISO(workoutDetails.sessao.data_treino), "yyyy-MM-dd");
+    a.download = `IronAI_${dataFormatada}.json`;
+    
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Arquivo JSON baixado com sucesso!");
+  };
+
   const handleDownloadImage = async () => {
     if (!modalRef.current) return;
     
     const toastId = toast.loading("Gerando imagem completa...");
     const modalElement = modalRef.current;
     
-    // 1. Encontra a div de dentro que tem o scroll
     const scrollableDiv = modalElement.querySelector('.overflow-y-auto') as HTMLElement;
     
-    // 2. Salva os estilos originais para não quebrar seu layout depois
     const originalMaxHeight = modalElement.style.maxHeight;
     const originalOverflow = modalElement.style.overflow;
     const originalScrollOverflow = scrollableDiv ? scrollableDiv.style.overflow : '';
 
     try {
-      // 3. "Estica" o modal removendo as travas de altura e scroll
       modalElement.style.maxHeight = 'none';
       modalElement.style.overflow = 'visible';
       if (scrollableDiv) scrollableDiv.style.overflow = 'visible';
 
-      // 4. Bate a foto com o modal esticado
       const canvas = await html2canvas(modalElement, {
         backgroundColor: '#111827',
         scale: 2,
-        windowHeight: modalElement.scrollHeight, // Avisa a câmera o tamanho real
+        windowHeight: modalElement.scrollHeight, 
       });
 
-      // 5. Gera a imagem e baixa
       const image = canvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.href = image;
@@ -132,7 +193,6 @@ export default function History() {
       console.error('Erro ao gerar imagem:', error);
       toast.error("Erro ao gerar imagem.", { id: toastId });
     } finally {
-      // 6. Devolve a barra de rolagem e a altura original pro modal
       modalElement.style.maxHeight = originalMaxHeight;
       modalElement.style.overflow = originalOverflow;
       if (scrollableDiv) scrollableDiv.style.overflow = originalScrollOverflow;
@@ -352,6 +412,24 @@ export default function History() {
                   title="Copiar Texto"
                 >
                   <Copy className="w-4 h-4" />
+                </button>
+
+                {/* NOVO: Botão Markdown */}
+                <button 
+                  onClick={handleCopyMarkdown}
+                  className="p-2 bg-gray-800 hover:bg-gray-700 text-purple-400 rounded-md transition-colors border border-gray-700"
+                  title="Copiar Markdown"
+                >
+                  <FileCode2 className="w-4 h-4" />
+                </button>
+
+                {/* NOVO: Botão JSON */}
+                <button 
+                  onClick={handleDownloadJSON}
+                  className="p-2 bg-gray-800 hover:bg-gray-700 text-yellow-400 rounded-md transition-colors border border-gray-700"
+                  title="Baixar JSON"
+                >
+                  <FileJson className="w-4 h-4" />
                 </button>
 
                 <button 
