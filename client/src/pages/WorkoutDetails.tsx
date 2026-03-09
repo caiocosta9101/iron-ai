@@ -384,24 +384,24 @@ export default function WorkoutDetails() {
                 <span className="text-[#92c9a8] font-medium">{workout.dias.length} Dias de Treino</span>
               </div>
 
-              {/* NOVOS BADGES DE DATA (Início e Fim da Periodização) */}
-              {workout.data_inicio && (
-                <div className="flex items-center gap-2 bg-blue-500/10 px-4 py-2 rounded-xl border border-blue-500/20">
-                  <CalendarDays size={18} className="text-blue-400" />
-                  <span className="text-blue-400 font-bold text-sm">
-                    Início: {new Date(workout.data_inicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                  </span>
+             {/* === NOVO CARD DE PERIODIZAÇÃO === */}
+              {(workout.data_inicio && workout.data_fim) && (
+                <div className="flex items-center gap-3 bg-[#112218] border border-[#326747] px-4 py-2 rounded-xl shadow-inner">
+                  <div className="p-2 bg-[#193324] rounded-lg border border-[#326747]/50">
+                    <CalendarDays size={18} className="text-emerald-400" />
+                  </div>
+                  <div className="flex flex-col justify-center">
+                    <span className="text-[10px] font-black text-[#92c9a8] uppercase tracking-widest mb-0.5">
+                      Período da Ficha
+                    </span>
+                    <div className="text-sm font-bold text-white flex items-center">
+                      {new Date(workout.data_inicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                      <span className="text-emerald-500 mx-2 text-xs">➔</span>
+                      {new Date(workout.data_fim).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                    </div>
+                  </div>
                 </div>
-              )}
-
-              {workout.data_fim && (
-                <div className="flex items-center gap-2 bg-purple-500/10 px-4 py-2 rounded-xl border border-purple-500/20">
-                  <Flag size={18} className="text-purple-400" />
-                  <span className="text-purple-400 font-bold text-sm">
-                    Fim: {new Date(workout.data_fim).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                  </span>
-                </div>
-              )}
+              )} 
             </div>
           </div>
         )}

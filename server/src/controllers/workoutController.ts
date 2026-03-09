@@ -201,7 +201,7 @@ export const getWorkoutById = async (req: AuthRequest, res: Response) => {
     const { data, error } = await supabase
       .from('treinos')
       .select(`
-        id, nome, descricao, objetivo, criado_em,
+        id, nome, descricao, objetivo, criado_em, data_inicio, data_fim,
         dias_treino (
           id, nome, ordem_dia, observacoes, foco,
           exercicios_treino (
@@ -223,8 +223,8 @@ export const getWorkoutById = async (req: AuthRequest, res: Response) => {
       descricao: data.descricao,
       objetivo: data.objetivo,
       criado_em: data.criado_em,
-      data_inicio: (data as any).data_inicio, 
-      data_fim: (data as any).data_fim,       
+      data_inicio: data.data_inicio, 
+      data_fim: data.data_fim,       
       dias: data.dias_treino
         .sort((a: any, b: any) => a.ordem_dia - b.ordem_dia) 
         .map((dia: any) => ({
