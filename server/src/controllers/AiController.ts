@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthRequest } from '../middlewares/authMiddleware';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { z } from 'zod';
@@ -124,6 +124,7 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
       {
         "nome": "Nome criativo e motivador do programa",
         "descricao": "Explicação técnica resumida do foco da periodização",
+        "duracao_semanas": 6, // Estipule entre 4 a 8 semanas para a duração ideal deste ciclo
         "dias": [
           {
             "nome": "Treino A - [Foco]",
@@ -159,5 +160,240 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({
       error: 'Falha na inteligência artificial. Tente novamente em instantes.',
     });
+  }
+};
+
+
+// =============================================================
+// CRON JOB: GERAÇÃO AUTOMÁTICA DE RELATÓRIOS (SEMANAL/FINAL)
+// =============================================================
+export const generatePeriodicReports = async (req: Request, res: Response) => {
+  try {
+    // GUARDA 1: SEGURANÇA DO VERCEL CRON
+    const authHeader = req.headers.authorization;
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      console.warn('Tentativa de acesso não autorizada ao Cron Job.');
+      return res.status(401).json({ error: 'Não autorizado.' });
+    }
+
+    if (!genAI) {
+      return res.status(500).json({ error: 'Gemini não configurado.' });
+    }
+
+    const hoje = new Date().toISOString().split('T')[0];
+
+    // Busca todos os treinos ativos
+    const { data: treinosAtivos, error: treinosError } = await supabase
+      .from('treinos')
+      .select('id, usuario_id, data_inicio, data_fim, nome')
+      .eq('status', 'ativa')
+      .not('data_inicio', 'is', null)
+      .not('data_fim', 'is', null);
+
+    if (treinosError || !treinosAtivos) {
+      throw new Error('Erro ao buscar treinos ativos no banco.');
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    let relatoriosGerados = 0;
+
+    for (const treino of treinosAtivos) {
+      
+      const dataInicio = new Date(treino.data_inicio);
+      const dataFim = new Date(treino.data_fim);
+      const dataHoje = new Date(hoje);
+
+      const diffTime = Math.abs(dataHoje.getTime() - dataInicio.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      let tipoRelatorio: 'semanal' | 'final' | null = null;
+
+      if (hoje === treino.data_fim) {
+        tipoRelatorio = 'final';
+      } else if (diffDays > 0 && diffDays % 7 === 0) {
+        tipoRelatorio = 'semanal';
+      }
+
+      if (tipoRelatorio) {
+        
+        // ====================================================================
+        // 1. COLETA DE DADOS REAIS DA SEMANA OU PERÍODO (O "TREINO REAL")
+        // ====================================================================
+        const dataFimBusca = hoje;
+        const dataInicioBusca = treino.data_inicio;
+
+        const { data: sessoes, error: sessoesError } = await supabase
+          .from('historico_sessoes')
+          .select(`
+            id,
+            duracao_real_minutos,
+            historico_execucao_exercicio (
+              observacoes,
+              cargas_kg,
+              exercicios ( nome )
+            )
+          `)
+          .eq('usuario_id', treino.usuario_id)
+          .eq('finalizado', true)
+          .gte('data_treino', dataInicioBusca)
+          .lte('data_treino', dataFimBusca);
+
+        if (sessoesError) {
+          console.error(`Erro ao buscar sessões do treino ${treino.id}:`, sessoesError);
+          continue; 
+        }
+
+        // PROCESSAMENTO DE DADOS
+        const totalTreinosConcluidos = sessoes?.length || 0;
+        let tempoTotal = 0;
+        const observacoesArray: string[] = [];
+        const evoluçãoCargasMap: Record<string, number[]> = {};
+
+        sessoes?.forEach(sessao => {
+          tempoTotal += sessao.duracao_real_minutos || 0;
+
+          sessao.historico_execucao_exercicio?.forEach((exec: any) => {
+            // Verifica se a relação retornou como array ou objeto único
+            const nomeExercicio = Array.isArray(exec.exercicios) 
+                ? exec.exercicios[0]?.nome 
+                : exec.exercicios?.nome || 'Exercício Desconhecido';
+
+            if (exec.observacoes && exec.observacoes.trim() !== '') {
+              observacoesArray.push(`- ${nomeExercicio}: ${exec.observacoes}`);
+            }
+
+            if (exec.cargas_kg && exec.cargas_kg.length > 0) {
+              const cargaMaxDoDia = Math.max(...exec.cargas_kg);
+              if (!evoluçãoCargasMap[nomeExercicio]) evoluçãoCargasMap[nomeExercicio] = [];
+              evoluçãoCargasMap[nomeExercicio].push(cargaMaxDoDia);
+            }
+          });
+        });
+
+        const tempoMedioTreino = totalTreinosConcluidos > 0 
+          ? Math.round(tempoTotal / totalTreinosConcluidos) + " minutos" 
+          : "Nenhum treino registrado no período.";
+
+        const observacoesUsuario = observacoesArray.length > 0 
+          ? observacoesArray.join('\n') 
+          : "Nenhuma dor, facilidade ou observação registrada pelo usuário.";
+
+        const destaquesCarga = Object.entries(evoluçãoCargasMap)
+          .map(([nome, cargas]) => {
+            if (cargas.length < 2) return null; 
+            const cargaInicial = cargas[0];
+            const cargaFinal = cargas[cargas.length - 1];
+            
+            if (cargaInicial === cargaFinal) return null; 
+            
+            const tendencia = cargaFinal > cargaInicial ? '📈 Evoluiu' : '📉 Regrediu';
+            return `- ${nome}: de ${cargaInicial}kg para ${cargaFinal}kg (${tendencia})`;
+          })
+          .filter(Boolean)
+          .join('\n') || "Cargas mantidas constantes ou dados insuficientes.";
+
+        // ====================================================================
+        // 2. CONSTRUÇÃO DO PROMPT
+        // ====================================================================
+        let prompt = `
+          Atue como um Personal Trainer de Elite e Fisiologista do Exercício.
+          O aluno está executando o programa de treinamento "${treino.nome}".
+        `;
+
+        if (tipoRelatorio === 'semanal') {
+          prompt += `
+            OBJETIVO: Avaliar o desempenho da semana e fazer micro-ajustes para a próxima semana.
+
+            DADOS REAIS DA SEMANA:
+            - Treinos concluídos: ${totalTreinosConcluidos}
+            - Tempo médio de treino: ${tempoMedioTreino}
+            - Evolução/Estagnação de Cargas (Comparativo início vs fim da semana): 
+            ${destaquesCarga}
+            - Feedback do Aluno: 
+            ${observacoesUsuario}
+
+            DIRETRIZES DO RELATÓRIO (Formato Markdown):
+            1. Análise de Aderência e Volume: Comente sobre a frequência e o tempo.
+            2. Análise de Cargas: Avalie a progressão relatada baseada nos dados.
+            3. Resposta ao Feedback: Se houver relato de dor ou dificuldade, sugira adaptações técnicas.
+            4. Meta da Próxima Semana: Dê uma instrução clara e única para os próximos 7 dias.
+            
+            Tom: Direto, técnico e profissional.
+          `;
+        } else if (tipoRelatorio === 'final') {
+          prompt += `
+            OBJETIVO: Fechamento da periodização (mesociclo) e diretrizes para o próximo ciclo.
+
+            DADOS GERAIS DO CICLO:
+            - Total de treinos realizados: ${totalTreinosConcluidos}
+            - Evolução Geral de Cargas no período: 
+            ${destaquesCarga}
+            - Dificuldades recorrentes relatadas: 
+            ${observacoesUsuario}
+
+            DIRETRIZES DO RELATÓRIO FINAL (Formato Markdown):
+            
+            ## 📊 Raio-X da Periodização
+            Balanço técnico do que foi alcançado com base nos treinos concluídos e cargas.
+
+            ## ⚠️ Pontos de Atenção
+            Liste falhas mecânicas ou estagnações notadas nos dados e como corrigir.
+
+            ## 🎯 Prescrição para o Próximo Ciclo (CRÍTICO)
+            Determine O QUE DEVE SER FEITO na próxima periodização com base nos resultados. Seja específico.
+          `;
+        }
+
+        const result = await model.generateContent(prompt);
+        const conteudoIA = result.response.text();
+
+        // Salva o relatório no banco de dados
+        await supabase.from('relatorios_ia').insert({
+          usuario_id: treino.usuario_id,
+          treino_id: treino.id,
+          tipo: tipoRelatorio,
+          conteudo: conteudoIA
+        });
+
+        // Se for final, conclui o treino
+        if (tipoRelatorio === 'final') {
+          await supabase
+            .from('treinos')
+            .update({ status: 'concluida' })
+            .eq('id', treino.id);
+        }
+
+        relatoriosGerados++;
+      }
+    }
+
+    return res.status(200).json({ 
+      message: 'Rotina de análise concluída com sucesso.',
+      relatoriosGerados: relatoriosGerados 
+    });
+
+  } catch (error: any) {
+    console.error('Erro no processamento do Cron:', error);
+    return res.status(500).json({ error: 'Falha interna na geração de relatórios.' });
+  }
+};
+
+// =============================================================
+// BUSCAR RELATÓRIOS DO USUÁRIO (FRONTEND)
+// =============================================================
+export const getUserReports = async (req: AuthRequest, res: Response) => {
+  try {
+    const { data, error } = await supabase
+      .from('relatorios_ia')
+      .select('*, treinos(nome)') // Traz os dados do relatório e o nome do treino vinculado
+      .eq('usuario_id', req.userId)
+      .order('data_geracao', { ascending: false });
+
+    if (error) throw error;
+
+    return res.status(200).json(data);
+  } catch (error: any) {
+    console.error('Erro ao buscar relatórios da IA:', error);
+    return res.status(500).json({ error: 'Erro ao carregar seus relatórios.' });
   }
 };

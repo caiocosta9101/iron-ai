@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
-import { TrendingUp, Clock, Activity, Dumbbell, Layers } from 'lucide-react';
+import { TrendingUp, Clock, Activity, Dumbbell, Layers, Bot, X } from 'lucide-react';
 import api from '../services/api';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -15,7 +15,12 @@ export function Progress() {
   const [isLoading, setIsLoading] = useState(false);
   const [muscleStats, setMuscleStats] = useState<any[]>([]);
 
-  // 1. Busca os KPIs gerais e a lista de exercícios agrupada ao carregar a página
+  // --- ESTADOS DO MODAL DA IA ---
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [relatorios, setRelatorios] = useState<any[]>([]);
+  const [loadingRelatorios, setLoadingRelatorios] = useState(false);
+
+  // 1. Busca os KPIs gerais e a lista de exercícios agrupada
   useEffect(() => {
     async function fetchInitialData() {
       try {
@@ -28,7 +33,6 @@ export function Progress() {
         setStats(statsRes.data);
         setWorkoutGroups(groupsRes.data);
         setMuscleStats(muscleRes.data);
-        // Seleciona o primeiro exercício do primeiro treino por padrão, se houver
         if (groupsRes.data.length > 0 && groupsRes.data[0].exercicios.length > 0) {
           setSelectedExercise(groupsRes.data[0].exercicios[0].id);
         }
@@ -39,7 +43,7 @@ export function Progress() {
     fetchInitialData();
   }, []);
 
-  // 2. Busca os dados do gráfico sempre que o exercício selecionado mudar
+  // 2. Busca os dados do gráfico
   useEffect(() => {
     async function fetchChartData() {
       if (!selectedExercise) return;
@@ -47,8 +51,6 @@ export function Progress() {
       setIsLoading(true);
       try {
         const response = await api.get(`/progress/exercise/${selectedExercise}`);
-        
-        // Formata a data para ficar bonita no eixo X do gráfico
         const formattedData = response.data.map((item: any) => ({
           ...item,
           dataLabel: format(parseISO(item.data), "dd/MMM", { locale: ptBR }),
@@ -64,7 +66,20 @@ export function Progress() {
     fetchChartData();
   }, [selectedExercise]);
 
-  // Componente customizado para o Tooltip (a caixinha que aparece ao passar o mouse)
+  // 3. Função para buscar Relatórios e abrir o Modal
+  const handleOpenReports = async () => {
+    setIsModalOpen(true);
+    setLoadingRelatorios(true);
+    try {
+      const response = await api.get('/reports');
+      setRelatorios(response.data);
+    } catch (error) {
+      console.error("Erro ao buscar relatórios", error);
+    } finally {
+      setLoadingRelatorios(false);
+    }
+  };
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
@@ -86,9 +101,22 @@ export function Progress() {
 
   return (
     <div className="p-6 text-white max-w-7xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-1">Seu Progresso</h1>
-        <p className="text-gray-400 text-sm">Acompanhe sua evolução e consistência</p>
+      
+      {/* --- CABEÇALHO COM BOTÃO DA IA --- */}
+      <div className="flex justify-between items-center mb-1">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">Seu Progresso</h1>
+          <p className="text-gray-400 text-sm">Acompanhe sua evolução e consistência</p>
+        </div>
+        
+        <button 
+          onClick={handleOpenReports}
+          className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center gap-2 shadow-lg shadow-emerald-900/20"
+        >
+          <Bot className="w-5 h-5" />
+          <span className="hidden sm:inline">Avaliações da IA</span>
+          <span className="sm:hidden">IA</span>
+        </button>
       </div>
 
       {/* --- CARDS DE KPIs --- */}
@@ -132,7 +160,6 @@ export function Progress() {
             <h2 className="text-lg font-bold">Evolução de Carga</h2>
           </div>
           
-          {/* SELECT AGRUPADO POR TREINOS */}
           <select 
             value={selectedExercise}
             onChange={(e) => setSelectedExercise(e.target.value)}
@@ -207,7 +234,7 @@ export function Progress() {
         </div>
       </div>
 
-      {/* --- NOVA SEÇÃO: VOLUME SEMANAL POR GRUPO MUSCULAR --- */}
+      {/* --- VOLUME SEMANAL POR GRUPO MUSCULAR --- */}
       <div className="pt-4">
         <div className="flex items-center gap-2 mb-4">
           <Layers className="w-5 h-5 text-emerald-500" />
@@ -221,14 +248,11 @@ export function Progress() {
             {muscleStats.map((grupo, index) => (
               <div key={index} className="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-sm">
                 
-                {/* Cabeçalho do Card */}
                 <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-3">
                   <div>
-                    {/* Título Principal: O Músculo (Ex: Tríceps) */}
                     <h3 className="font-bold text-lg text-white leading-tight">
                       {grupo.musculo_primario}
                     </h3>
-                    {/* Tag Menor: O Grupo Pai (Ex: Braço) */}
                     <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
                       {grupo.grupo_pai}
                     </span>
@@ -238,7 +262,6 @@ export function Progress() {
                   </span>
                 </div>
 
-                {/* Métricas Principais */}
                 <div className="flex justify-between text-sm mb-4">
                   <div className="text-gray-400">
                     <p>Total Reps</p>
@@ -250,7 +273,6 @@ export function Progress() {
                   </div>
                 </div>
 
-                {/* Lista de Carga Máxima por Exercício */}
                 <div className="space-y-2 mt-2">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Carga Máxima atingida</p>
                   {grupo.exercicios.map((ex: any, idx: number) => (
@@ -266,6 +288,75 @@ export function Progress() {
           </div>
         )}
       </div>
+
+      {/* ========================================= */}
+      {/* MODAL DE RELATÓRIOS DA IA */}
+      {/* ========================================= */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl">
+            
+            <div className="flex justify-between items-center p-5 border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-500">
+                  <Bot className="w-6 h-6" />
+                </div>
+                <h2 className="text-xl font-bold text-white">Dossiê de Treinamento</h2>
+              </div>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1">
+              {loadingRelatorios ? (
+                <div className="flex flex-col items-center justify-center h-40 text-emerald-500 animate-pulse gap-3">
+                  <Bot className="w-8 h-8" />
+                  <p>Buscando análises do treinador...</p>
+                </div>
+              ) : relatorios.length === 0 ? (
+                <div className="text-center text-gray-500 mt-10 flex flex-col items-center gap-3">
+                  <Activity className="w-10 h-10 opacity-20" />
+                  <p>Você ainda não possui relatórios gerados.</p>
+                  <p className="text-sm">Eles aparecerão aqui automaticamente após 7 dias de treino.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {relatorios.map((relatorio) => (
+                    <div key={relatorio.id} className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                      <div className="flex justify-between items-start mb-4">
+                        <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full ${
+                          relatorio.tipo === 'final' 
+                            ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' 
+                            : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        }`}>
+                          Avaliação {relatorio.tipo}
+                        </span>
+                        <span className="text-sm text-gray-400 font-medium bg-gray-900 px-3 py-1 rounded-full">
+                          {new Date(relatorio.data_geracao).toLocaleDateString('pt-BR')}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 mb-4 text-gray-300">
+                        <Layers className="w-4 h-4 text-gray-500" />
+                        <p className="text-sm font-medium">Referente a: <span className="text-white">{relatorio.treinos?.nome}</span></p>
+                      </div>
+                      
+                      {/* O whitespace-pre-wrap preserva as quebras de linha do Markdown gerado pela IA */}
+                      <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
+                        {relatorio.conteudo}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

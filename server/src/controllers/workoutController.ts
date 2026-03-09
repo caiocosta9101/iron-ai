@@ -25,7 +25,9 @@ const parseDescanso = (descString: string | number | undefined) => {
 // 1. CRIAR TREINO (Salva o JSON da IA ou Manual no Banco)
 export const createWorkout = async (req: AuthRequest, res: Response) => {
   console.log('🔥 createWorkout chamado!');
-  const { nome, descricao, perfil, dias, gerado_por_ia, objetivo } = req.body; 
+  
+  // 1. Desestruturamos todos os dados, incluindo o novo duracao_semanas vindo da IA
+  const { nome, descricao, perfil, dias, gerado_por_ia, objetivo, data_inicio, data_fim, duracao_semanas } = req.body; 
   
   // O middleware já validou e nos entregou o ID aqui!
   const userId = req.userId; 
@@ -68,10 +70,35 @@ export const createWorkout = async (req: AuthRequest, res: Response) => {
     const objFinal = objetivo || (perfil ? perfil.objetivo : 'Geral');
     const isIA = gerado_por_ia !== undefined ? gerado_por_ia : true;
 
-    // Salva o Cabeçalho do Treino
+    // =========================================================
+    // LÓGICA INTELIGENTE DE DATAS DA PERIODIZAÇÃO
+    // =========================================================
+    let dataInicioFinal = data_inicio || new Date().toISOString().split('T')[0];
+    let dataFimFinal = data_fim; 
+
+    // Se o treino não tiver data_fim (ex: veio da IA), mas tiver duracao_semanas, nós calculamos o fim!
+    if (!dataFimFinal && duracao_semanas) {
+      // Cria um objeto de data baseado no início (cuidado com fuso horário, adicione 'T00:00:00' para precisão)
+      const dataCalculo = new Date(`${dataInicioFinal}T00:00:00`);
+      // Soma os dias (Semanas x 7)
+      dataCalculo.setDate(dataCalculo.getDate() + (duracao_semanas * 7));
+      // Transforma de volta em string no formato YYYY-MM-DD
+      dataFimFinal = dataCalculo.toISOString().split('T')[0];
+    }
+    // =========================================================
+
+    // Salva o Cabeçalho do Treino incluindo as datas finais
     const { data: treinoData, error: treinoError } = await supabase
       .from('treinos')
-      .insert([{ usuario_id: userId, nome, descricao, objetivo: objFinal, gerado_por_ia: isIA }])
+      .insert([{ 
+        usuario_id: userId, 
+        nome, 
+        descricao, 
+        objetivo: objFinal, 
+        gerado_por_ia: isIA,
+        data_inicio: dataInicioFinal,
+        data_fim: dataFimFinal || null 
+      }])
       .select()
       .single();
 
@@ -196,6 +223,8 @@ export const getWorkoutById = async (req: AuthRequest, res: Response) => {
       descricao: data.descricao,
       objetivo: data.objetivo,
       criado_em: data.criado_em,
+      data_inicio: (data as any).data_inicio, 
+      data_fim: (data as any).data_fim,       
       dias: data.dias_treino
         .sort((a: any, b: any) => a.ordem_dia - b.ordem_dia) 
         .map((dia: any) => ({

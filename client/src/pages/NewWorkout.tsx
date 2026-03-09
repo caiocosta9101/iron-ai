@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Dumbbell, BrainCircuit, ChevronRight, Sparkles, 
-  Plus, Trash2, Save, Search, ChevronLeft 
+  Plus, Trash2, Save, Search, ChevronLeft, Calendar
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -28,11 +28,13 @@ export default function NewWorkout() {
   const [search, setSearch] = useState('');
   const [exerciseLibrary, setExerciseLibrary] = useState<Exercise[]>([]);
 
-  // Estado do treino manual atualizado com descrição e objetivo
+  // Estado do treino manual atualizado com as novas datas de periodização
   const [manualWorkout, setManualWorkout] = useState({
     nome: '',
     descricao: '',
-    objetivo: 'Hipertrofia', // Valor padrão inicial
+    objetivo: 'Hipertrofia', 
+    data_inicio: new Date().toISOString().split('T')[0], // Hoje como padrão
+    data_fim: '', // Vazio para o usuário escolher
     dias: [
       { nome: 'Treino A', foco: '', exercicios: [] as any[] }
     ]
@@ -70,7 +72,7 @@ export default function NewWorkout() {
       series: 3,
       repeticoes_min: 8,
       repeticoes_max: 12,
-      descanso_segundos: 60 // Padrão que agora poderá ser editado
+      descanso_segundos: 60 
     });
     setManualWorkout({ ...manualWorkout, dias: newDias });
     setSearch('');
@@ -92,12 +94,18 @@ export default function NewWorkout() {
   const handleSaveManual = async () => {
     if (!manualWorkout.nome) return toast.error("Dê um nome ao seu treino!");
     if (!manualWorkout.objetivo) return toast.error("Selecione um objetivo!");
+    if (!manualWorkout.data_inicio || !manualWorkout.data_fim) return toast.error("Defina o período da periodização!");
+    
+    // Validação básica de data
+    if (new Date(manualWorkout.data_fim) <= new Date(manualWorkout.data_inicio)) {
+      return toast.error("A data de término deve ser posterior à data de início!");
+    }
     
     try {
       setLoading(true);
       const payload = {
         ...manualWorkout,
-        gerado_por_ia: false, // Isso fará a tag "IRON AI" sumir na visualização
+        gerado_por_ia: false, 
         dias_treino: manualWorkout.dias.map((d, idx) => ({
           ...d,
           ordem_dia: idx + 1
@@ -171,7 +179,7 @@ export default function NewWorkout() {
             
             <div className="flex flex-col md:flex-row gap-4">
               <select 
-                className="bg-[#112218] border border-[#326747] text-white p-3 rounded-xl focus:border-[#13ec6a] outline-none font-bold"
+                className="bg-[#112218] border border-[#326747] text-white p-3 rounded-xl focus:border-[#13ec6a] outline-none font-bold shrink-0"
                 value={manualWorkout.objetivo}
                 onChange={(e) => setManualWorkout({...manualWorkout, objetivo: e.target.value})}
               >
@@ -189,12 +197,39 @@ export default function NewWorkout() {
                 onChange={(e) => setManualWorkout({...manualWorkout, descricao: e.target.value})}
               />
             </div>
+
+            {/* NOVOS CAMPOS DE DATA PARA PERIODIZAÇÃO */}
+            <div className="flex flex-col md:flex-row gap-4 pt-2 border-t border-[#326747]/50 mt-2">
+              <div className="flex-1 flex flex-col gap-1">
+                <label className="text-xs text-[#92c9a8] font-bold uppercase flex items-center gap-1">
+                  <Calendar size={12} /> Início da Periodização
+                </label>
+                <input 
+                  type="date" 
+                  className="bg-[#112218] border border-[#326747] text-white p-3 rounded-xl focus:border-[#13ec6a] outline-none"
+                  value={manualWorkout.data_inicio}
+                  onChange={(e) => setManualWorkout({...manualWorkout, data_inicio: e.target.value})}
+                />
+              </div>
+              <div className="flex-1 flex flex-col gap-1">
+                <label className="text-xs text-[#92c9a8] font-bold uppercase flex items-center gap-1">
+                  <Calendar size={12} /> Fim da Periodização (Obrigatório)
+                </label>
+                <input 
+                  type="date" 
+                  className="bg-[#112218] border border-[#326747] text-white p-3 rounded-xl focus:border-[#13ec6a] outline-none"
+                  value={manualWorkout.data_fim}
+                  onChange={(e) => setManualWorkout({...manualWorkout, data_fim: e.target.value})}
+                />
+              </div>
+            </div>
+            
           </div>
 
           <button 
             onClick={handleSaveManual}
             disabled={loading}
-            className="bg-[#13ec6a] text-[#112218] px-8 py-4 rounded-full font-black flex items-center gap-2 hover:scale-105 transition-all disabled:opacity-50 shrink-0 shadow-lg shadow-[#13ec6a]/20"
+            className="bg-[#13ec6a] text-[#112218] px-8 py-4 rounded-full font-black flex items-center gap-2 hover:scale-105 transition-all disabled:opacity-50 shrink-0 shadow-lg shadow-[#13ec6a]/20 mt-4 md:mt-0"
           >
             <Save size={20} /> {loading ? 'Salvando...' : 'Salvar Treino'}
           </button>

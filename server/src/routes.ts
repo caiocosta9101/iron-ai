@@ -11,7 +11,7 @@ import { getDashboardData } from './controllers/dashboardController';
 import { getExercises } from './controllers/exerciseController';
 
 // === IMPORTAÇÕES DE TREINO ===
-import { generateWorkout } from './controllers/AiController';
+import { generateWorkout, generatePeriodicReports, getUserReports } from './controllers/AiController';
 import { 
   createWorkout, 
   getUserWorkouts, 
@@ -39,6 +39,11 @@ const router = Router();
 router.post('/auth/register', register);
 router.post('/auth/login', login); 
 
+//ROTA DO VERCEL CRON (Execução Automática) 
+// Ela fica na área "pública" do Express, mas é protegida internamente por um Secret Key
+router.get('/cron/generate-reports', generatePeriodicReports); // Vercel usa método GET para Crons
+
+
 // ==========================================
 // 🔴 ÁREA RESTRITA (Exige Token JWT Válido)
 // ==========================================
@@ -46,6 +51,9 @@ router.post('/auth/login', login);
 // Esse comando aplica o middleware em TODAS as rotas que estiverem abaixo dele.
 // Se não tiver token ou estiver expirado, a requisição morre aqui e nem chega nos controllers.
 router.use(authMiddleware); 
+
+// === ROTAS DE RELATÓRIOS IA ===
+router.get('/reports', getUserReports);
 
 // === ROTAS DE DASHBOARD ===
 router.get('/dashboard', getDashboardData);

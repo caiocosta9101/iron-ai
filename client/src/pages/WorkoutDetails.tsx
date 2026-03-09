@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronLeft, Dumbbell, Clock, Activity, Calendar, 
-  AlertCircle, Trash2, Edit3, Check, X, Save, RefreshCw, Search, Plus
+  AlertCircle, Trash2, Edit3, Check, X, Save, RefreshCw, Search, Plus,
+  CalendarDays, Flag // <-- Ícones de data adicionados aqui
 } from 'lucide-react';
 import api from '../services/api';
 import { toast } from 'sonner';
@@ -34,6 +35,8 @@ interface TreinoDetalhado {
   descricao: string;
   objetivo: string;
   criado_em: string;
+  data_inicio?: string; // <-- Adicionado para o TypeScript não chiar
+  data_fim?: string;    // <-- Adicionado para o TypeScript não chiar
   gerado_por_ia: boolean;
   dias: DiaTreino[];
 }
@@ -370,7 +373,8 @@ export default function WorkoutDetails() {
             
             {workout.descricao && <p className="text-zinc-400 text-lg mb-6 leading-relaxed">{workout.descricao}</p>}
             
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-wrap gap-4 mt-2">
+              {/* BADGES EXISTENTES */}
               <div className="flex items-center gap-2 bg-[#193324] px-4 py-2 rounded-xl border border-[#326747]">
                 <Activity size={18} className="text-emerald-400" />
                 <span className="text-[#92c9a8] font-medium capitalize">{workout.objetivo}</span>
@@ -379,6 +383,25 @@ export default function WorkoutDetails() {
                 <Calendar size={18} className="text-emerald-400" />
                 <span className="text-[#92c9a8] font-medium">{workout.dias.length} Dias de Treino</span>
               </div>
+
+              {/* NOVOS BADGES DE DATA (Início e Fim da Periodização) */}
+              {workout.data_inicio && (
+                <div className="flex items-center gap-2 bg-blue-500/10 px-4 py-2 rounded-xl border border-blue-500/20">
+                  <CalendarDays size={18} className="text-blue-400" />
+                  <span className="text-blue-400 font-bold text-sm">
+                    Início: {new Date(workout.data_inicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                  </span>
+                </div>
+              )}
+
+              {workout.data_fim && (
+                <div className="flex items-center gap-2 bg-purple-500/10 px-4 py-2 rounded-xl border border-purple-500/20">
+                  <Flag size={18} className="text-purple-400" />
+                  <span className="text-purple-400 font-bold text-sm">
+                    Fim: {new Date(workout.data_fim).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}
