@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronLeft, Dumbbell, Clock, Activity, Calendar, 
   AlertCircle, Trash2, Edit3, Check, X, Save, RefreshCw, Search, Plus,
-  CalendarDays, Flag // <-- Ícones de data adicionados aqui
+  CalendarDays // <-- Ícones de data adicionados aqui
 } from 'lucide-react';
 import api from '../services/api';
 import { toast } from 'sonner';
