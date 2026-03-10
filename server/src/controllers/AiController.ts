@@ -187,7 +187,7 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
     const { data: treinosAtivos, error: treinosError } = await supabase
       .from('treinos')
       .select('id, usuario_id, data_inicio, data_fim, nome')
-      .eq('status', 'ativa')
+      .eq('status', 'ativo')
       .not('data_inicio', 'is', null)
       .not('data_fim', 'is', null);
 
