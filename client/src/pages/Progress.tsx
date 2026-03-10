@@ -6,6 +6,7 @@ import { TrendingUp, Clock, Activity, Dumbbell, Layers, Bot, X } from 'lucide-re
 import api from '../services/api';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import ReactMarkdown from 'react-markdown'; // <-- IMPORT NOVO AQUI
 
 export function Progress() {
   const [stats, setStats] = useState({ totalTreinos: 0, tempoTotalHoras: 0 });
@@ -327,6 +328,8 @@ export function Progress() {
                 <div className="space-y-6">
                   {relatorios.map((relatorio) => (
                     <div key={relatorio.id} className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                      
+                      {/* Cabeçalho do Card de Relatório */}
                       <div className="flex justify-between items-start mb-4">
                         <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full ${
                           relatorio.tipo === 'final' 
@@ -335,20 +338,44 @@ export function Progress() {
                         }`}>
                           Avaliação {relatorio.tipo}
                         </span>
-                        <span className="text-sm text-gray-400 font-medium bg-gray-900 px-3 py-1 rounded-full">
+                        <span className="text-sm text-gray-400 font-medium bg-gray-900 px-3 py-1 rounded-full border border-gray-800">
                           {new Date(relatorio.data_geracao).toLocaleDateString('pt-BR')}
                         </span>
                       </div>
                       
-                      <div className="flex items-center gap-2 mb-4 text-gray-300">
-                        <Layers className="w-4 h-4 text-gray-500" />
+                      <div className="flex items-center gap-2 mb-6 text-gray-300">
+                        <Layers className="w-4 h-4 text-emerald-500" />
                         <p className="text-sm font-medium">Referente a: <span className="text-white">{relatorio.treinos?.nome}</span></p>
                       </div>
                       
-                      {/* O whitespace-pre-wrap preserva as quebras de linha do Markdown gerado pela IA */}
-                      <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
-                        {relatorio.conteudo}
+                      {/* ========================================= */}
+                      {/* RENDERIZADOR DO MARKDOWN COM TAILWIND CSS */}
+                      {/* ========================================= */}
+                      <div className="text-gray-300 text-sm">
+                        <ReactMarkdown
+                          components={{
+                            // Título Nível 1 (Se a IA gerar #)
+                            h1: ({node, ...props}) => <h1 className="text-xl font-bold text-white mt-6 mb-3" {...props} />,
+                            // Título Nível 2 (Ex: ## ⚠️ Pontos de Atenção)
+                            h2: ({node, ...props}) => <h2 className="text-lg font-bold text-emerald-400 mt-6 mb-2 border-b border-gray-700 pb-1" {...props} />,
+                            // Título Nível 3 (Ex: ### Meta da Próxima Semana)
+                            h3: ({node, ...props}) => <h3 className="text-base font-bold text-gray-200 mt-4 mb-2" {...props} />,
+                            // Parágrafos Normais
+                            p: ({node, ...props}) => <p className="mb-3 leading-relaxed" {...props} />,
+                            // Listas com Bolinhas (Ex: - Análise de Cargas...)
+                            ul: ({node, ...props}) => <ul className="list-disc list-inside mb-4 space-y-1 marker:text-emerald-500" {...props} />,
+                            // Listas Numeradas (Ex: 1. Fazer isso...)
+                            ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-4 space-y-1 marker:text-emerald-500" {...props} />,
+                            // Itens da Lista
+                            li: ({node, ...props}) => <li className="text-gray-300 leading-relaxed ml-2" {...props} />,
+                            // Textos em Negrito (Ex: **Muito Importante**)
+                            strong: ({node, ...props}) => <strong className="font-bold text-white" {...props} />,
+                          }}
+                        >
+                          {relatorio.conteudo}
+                        </ReactMarkdown>
                       </div>
+
                     </div>
                   ))}
                 </div>
