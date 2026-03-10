@@ -170,17 +170,18 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
 export const generatePeriodicReports = async (req: Request, res: Response) => {
   try {
     // GUARDA 1: SEGURANÇA DO VERCEL CRON
-    const authHeader = req.headers.authorization;
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.warn('Tentativa de acesso não autorizada ao Cron Job.');
-      return res.status(401).json({ error: 'Não autorizado.' });
-    }
+    //const authHeader = req.headers.authorization;
+    //if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      //console.warn('Tentativa de acesso não autorizada ao Cron Job.');
+      //return res.status(401).json({ error: 'Não autorizado.' });
+    //}
 
     if (!genAI) {
       return res.status(500).json({ error: 'Gemini não configurado.' });
     }
-
-    const hoje = new Date().toISOString().split('T')[0];
+    //modo teste
+    const hoje = '2026-03-09'
+    //const hoje = new Date().toISOString().split('T')[0];
 
     // Busca todos os treinos ativos
     const { data: treinosAtivos, error: treinosError } = await supabase
