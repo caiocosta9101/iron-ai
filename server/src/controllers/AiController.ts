@@ -180,7 +180,7 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Gemini não configurado.' });
     }
     //modo teste
-    const hoje = '2026-03-03'
+    const hoje = '2026-03-10'
     //const hoje = new Date().toISOString().split('T')[0];
 
     // Busca todos os treinos ativos
