@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 
 export const ProtectedRoute = () => {
-  const token = localStorage.getItem('token');
-  const expiry = localStorage.getItem('token_expiry');
-
-  const isAuthenticated = token && expiry && Date.now() < Number(expiry);
+  const [isAuthenticated] = useState(() => {
+    const token = localStorage.getItem('token');
+    const expiry = localStorage.getItem('token_expiry');
+    return token && expiry && Date.now() < Number(expiry);
+  });
 
   if (!isAuthenticated) {
     // Limpa dados inválidos/expirados

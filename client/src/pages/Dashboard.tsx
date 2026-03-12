@@ -18,7 +18,7 @@ interface ExerciseMaxLoad {
 interface SessionData {
   id: string; programName: string; name: string; focus: string;
   estimatedTime: number; intensity: string;
-  maxLoads: ExerciseMaxLoad[]; // <-- Atualizado aqui
+  maxLoads: ExerciseMaxLoad[];
 }
 
 interface HistoryData {
@@ -379,11 +379,12 @@ export const Dashboard: React.FC = () => {
                                 {filteredHistory.length > 0 ? (
                                     filteredHistory.map((act) => (
                                         <tr key={act.id} className="hover:bg-white/5 transition-all">
+                                            {/* LINHA CORRIGIDA AQUI: Uso de spans ao invés de divs dentro do td */}
                                             <td className="px-6 py-4 font-bold text-sm text-white">
-                                                <div className="flex items-center gap-3">
-                                                <div className={`w-2 h-2 rounded-full ${act.statusColor}`} />
-                                                {act.name}
-                                                </div>
+                                                <span className="flex items-center gap-3">
+                                                    <span className={`w-2 h-2 rounded-full block shrink-0 ${act.statusColor}`} />
+                                                    <span>{act.name}</span>
+                                                </span>
                                             </td>
                                             <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.date}</td>
                                             <td className="px-6 py-4 text-xs text-[#92c9a8]">{act.duration}</td>

@@ -1,3 +1,4 @@
+// client/src/pages/AiSetup.tsx
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner'; 
@@ -13,7 +14,6 @@ export default function AiSetup() {
   const [step, setStep] = useState(1);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  // Estado completo atualizado com as novas colunas do banco
   const [answers, setAnswers] = useState({
     objetivo: '', 
     sexo: '',
@@ -31,9 +31,7 @@ export default function AiSetup() {
   const handleNext = () => setStep(step + 1);
   const handleBack = () => setStep(step - 1);
 
-  // === FUNÇÃO DE GERAÇÃO REAL ===
   const handleGenerate = async () => {
-    // Validação de segurança extra antes de enviar
     if (!answers.objetivo || !answers.idade || !answers.peso || !answers.altura || !answers.sexo || !answers.nivel) {
         toast.error("Preencha todos os campos obrigatórios antes de gerar.");
         return;
@@ -43,19 +41,17 @@ export default function AiSetup() {
         setIsGenerating(true);
         toast.loading("A IA está analisando sua biometria e ambiente de treino...", { id: 'ia-toast' });
 
-        // 1. Chamada Real ao Backend para gerar o treino (Envia tudo para o Gemini)
         const response = await api.post('/workouts/generate', {
             ...answers,
             idade: Number(answers.idade),
             peso: Number(answers.peso),
             altura: Number(answers.altura),
-            });
+        });
         const treinoGerado = response.data;
         console.log("Payload recebido do Gemini:", treinoGerado);
 
         toast.loading("Salvando seu novo treino e perfil no banco de dados...", { id: 'ia-toast' });
 
-        // 2. O ELO PERDIDO: Junta a resposta da IA com o perfil completo do usuário
         const payloadParaBanco = {
             ...treinoGerado,
             perfil: {
@@ -64,15 +60,13 @@ export default function AiSetup() {
                 peso: Number(answers.peso),
                 altura: Number(answers.altura),
             }
-            };
-            // ADICIONA AQUI:
-            console.log("Payload para o banco:", JSON.stringify(payloadParaBanco, null, 2));
-        // 3. Salva o treino completo no Banco de Dados
+        };
+            
+        console.log("Payload para o banco:", JSON.stringify(payloadParaBanco, null, 2));
         await api.post('/workouts', payloadParaBanco);
 
         toast.success("Treino de Elite criado e salvo com sucesso!", { id: 'ia-toast' });
 
-        // 4. Navega para o Dashboard
         navigate('/dashboard', { state: { newWorkout: payloadParaBanco } });
 
     } catch (error) {
@@ -96,7 +90,7 @@ export default function AiSetup() {
         <p className="text-[#92c9a8]">Passo {step} de 6</p>
       </div>
 
-      {/* Barra de Progresso (Divisão por 6) */}
+      {/* Barra de Progresso */}
       <div className="h-1 bg-[#193324] rounded-full overflow-hidden mb-8 max-w-md mx-auto">
         <div 
             className="h-full bg-purple-600 transition-all duration-500 ease-out shadow-[0_0_10px_#9333ea]" 
@@ -126,24 +120,24 @@ export default function AiSetup() {
                                 : 'bg-[#112218] border-[#326747] text-zinc-400 hover:border-purple-500/50 hover:bg-[#152b1f]'
                             }`}
                         >
-                            <div className="flex justify-between items-start mb-2">
+                            {/* CORRIGIDO: div transformada em span */}
+                            <span className="flex justify-between items-start mb-2 w-full">
                                 <span className="text-2xl">{item.icon}</span>
-                                {answers.objetivo === item.label && <Check size={20} className="text-white" />}
-                            </div>
+                                {answers.objetivo === item.label && <Check size={20} className="text-white shrink-0" />}
+                            </span>
                             <span className={`block font-bold text-lg ${answers.objetivo === item.label ? 'text-white' : 'text-white'}`}>{item.label}</span>
-                            <span className={`text-sm ${answers.objetivo === item.label ? 'text-purple-200' : 'text-[#92c9a8]'}`}>{item.desc}</span>
+                            <span className={`block text-sm mt-1 ${answers.objetivo === item.label ? 'text-purple-200' : 'text-[#92c9a8]'}`}>{item.desc}</span>
                         </button>
                     ))}
                 </div>
             </div>
         )}
 
-        {/* --- PASSO 2: BIO (Sexo, Idade, Peso, Altura) --- */}
+        {/* --- PASSO 2: BIO --- */}
         {step === 2 && (
             <div className="space-y-8 animate-in slide-in-from-right duration-300">
                 <h2 className="text-2xl font-bold text-white text-center">Sobre Você</h2>
                 
-                {/* Sexo Biológico */}
                 <div className="grid grid-cols-2 gap-4 mb-6">
                     {['Masculino', 'Feminino'].map((sexo) => (
                         <button
@@ -229,7 +223,6 @@ export default function AiSetup() {
             <div className="space-y-8 animate-in slide-in-from-right duration-300">
                 <h2 className="text-2xl font-bold text-white text-center">Sua Disponibilidade</h2>
                 
-                {/* Dias por Semana */}
                 <div className="space-y-4">
                     <div className="flex items-center gap-3 text-[#92c9a8] mb-2">
                         <Calendar size={20} className="text-purple-400" />
@@ -253,7 +246,6 @@ export default function AiSetup() {
                     </div>
                 </div>
 
-                {/* Tempo */}
                 <div className="space-y-4">
                     <div className="flex items-center gap-3 text-[#92c9a8] mb-2">
                         <Clock size={20} className="text-purple-400" />
@@ -297,20 +289,21 @@ export default function AiSetup() {
                                 : 'bg-[#112218] border-[#326747] text-zinc-400 hover:border-purple-500/50'
                             }`}
                         >
-                            <div className={`p-2 rounded-full ${answers.nivel === nivel.val ? 'bg-white/20' : 'bg-[#193324]'}`}>
+                            {/* CORRIGIDO: div transformada em span */}
+                            <span className={`p-2 rounded-full flex items-center justify-center shrink-0 ${answers.nivel === nivel.val ? 'bg-white/20' : 'bg-[#193324]'}`}>
                                 <Activity size={20} />
-                            </div>
-                            <div>
-                                <span className="block font-bold">{nivel.val}</span>
-                                <span className={`text-sm ${answers.nivel === nivel.val ? 'text-purple-200' : 'text-[#92c9a8]'}`}>{nivel.desc}</span>
-                            </div>
+                            </span>
+                            <span className="flex flex-col">
+                                <span className="block font-bold text-lg leading-tight mb-1">{nivel.val}</span>
+                                <span className={`block text-sm leading-tight ${answers.nivel === nivel.val ? 'text-purple-200' : 'text-[#92c9a8]'}`}>{nivel.desc}</span>
+                            </span>
                         </button>
                     ))}
                 </div>
             </div>
         )}
 
-        {/* --- PASSO 6: AMBIENTE (NOVO) --- */}
+        {/* --- PASSO 6: AMBIENTE --- */}
         {step === 6 && (
             <div className="space-y-6 animate-in slide-in-from-right duration-300">
                 <h2 className="text-2xl font-bold text-white text-center">Onde você vai treinar?</h2>
@@ -324,11 +317,14 @@ export default function AiSetup() {
                             : 'bg-[#112218] border-[#326747] text-zinc-400 hover:border-purple-500/50'
                         }`}
                     >
-                        <Dumbbell size={32} className={answers.acesso_academia ? "text-white" : "text-purple-400"} />
-                        <div>
-                            <span className="block font-bold text-lg text-white">Academia Completa</span>
-                            <span className="text-sm">Tenho acesso a máquinas e pesos livres.</span>
-                        </div>
+                        {/* CORRIGIDO: div transformada em span */}
+                        <span className="shrink-0 flex items-center justify-center">
+                            <Dumbbell size={32} className={answers.acesso_academia ? "text-white" : "text-purple-400"} />
+                        </span>
+                        <span className="flex flex-col">
+                            <span className="block font-bold text-lg text-white leading-tight mb-1">Academia Completa</span>
+                            <span className="block text-sm leading-tight">Tenho acesso a máquinas e pesos livres.</span>
+                        </span>
                     </button>
 
                     <button
@@ -339,15 +335,17 @@ export default function AiSetup() {
                             : 'bg-[#112218] border-[#326747] text-zinc-400 hover:border-purple-500/50'
                         }`}
                     >
-                        <Home size={32} className={!answers.acesso_academia ? "text-white" : "text-purple-400"} />
-                        <div>
-                            <span className="block font-bold text-lg text-white">Treino em Casa</span>
-                            <span className="text-sm">Sem máquinas. Apenas peso do corpo ou itens básicos.</span>
-                        </div>
+                        {/* CORRIGIDO: div transformada em span */}
+                        <span className="shrink-0 flex items-center justify-center">
+                            <Home size={32} className={!answers.acesso_academia ? "text-white" : "text-purple-400"} />
+                        </span>
+                        <span className="flex flex-col">
+                            <span className="block font-bold text-lg text-white leading-tight mb-1">Treino em Casa</span>
+                            <span className="block text-sm leading-tight">Sem máquinas. Apenas peso do corpo ou itens básicos.</span>
+                        </span>
                     </button>
                 </div>
 
-                {/* Se marcar que treina em casa, exibe o input de equipamentos */}
                 {!answers.acesso_academia && (
                     <div className="mt-6 space-y-2 animate-in fade-in slide-in-from-bottom-2">
                         <label className="text-sm font-bold text-[#92c9a8] uppercase tracking-wider">
@@ -375,7 +373,7 @@ export default function AiSetup() {
                     <ChevronLeft size={20} /> Voltar
                 </button>
             ) : (
-                <div />
+                <span />
             )}
 
             <button 
