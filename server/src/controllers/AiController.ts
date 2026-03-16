@@ -179,8 +179,7 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
     if (!genAI) {
       return res.status(500).json({ error: 'Gemini não configurado.' });
     }
-    //modo teste
-    //const hoje = '2026-03-10'
+    
     const hoje = new Date().toISOString().split('T')[0];
 
     // Busca todos os treinos ativos
@@ -202,10 +201,12 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
       
       const dataInicio = new Date(treino.data_inicio);
       const dataFim = new Date(treino.data_fim);
-      const dataHoje = new Date(hoje);
+      // Ajuste para criar um objeto Date zerado considerando a string YYYY-MM-DD
+      const dataHoje = new Date(hoje + 'T00:00:00');
 
-      const diffTime = Math.abs(dataHoje.getTime() - dataInicio.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      // Corrige problema de fuso cruzando a diferença pura de dias UTC
+      const diffTime = Math.abs(dataHoje.getTime() - new Date(treino.data_inicio + 'T00:00:00').getTime());
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
       let tipoRelatorio: 'semanal' | 'final' | null = null;
 
@@ -221,7 +222,14 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
         // 1. COLETA DE DADOS REAIS DA SEMANA OU PERÍODO (O "TREINO REAL")
         // ====================================================================
         const dataFimBusca = hoje;
-        const dataInicioBusca = treino.data_inicio;
+        let dataInicioBusca = treino.data_inicio;
+
+        // FILTRO CRUCIAL: Se for semanal, pega apenas os últimos 7 dias!
+        if (tipoRelatorio === 'semanal') {
+          const seteDiasAtras = new Date(dataHoje);
+          seteDiasAtras.setDate(seteDiasAtras.getDate() - 7);
+          dataInicioBusca = seteDiasAtras.toISOString().split('T')[0];
+        }
 
         const { data: sessoes, error: sessoesError } = await supabase
           .from('historico_sessoes')
@@ -254,7 +262,6 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
           tempoTotal += sessao.duracao_real_minutos || 0;
 
           sessao.historico_execucao_exercicio?.forEach((exec: any) => {
-            // Verifica se a relação retornou como array ou objeto único
             const nomeExercicio = Array.isArray(exec.exercicios) 
                 ? exec.exercicios[0]?.nome 
                 : exec.exercicios?.nome || 'Exercício Desconhecido';
@@ -296,6 +303,8 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
         // ====================================================================
         // 2. CONSTRUÇÃO DO PROMPT
         // ====================================================================
+        const semanaAtual = Math.floor(diffDays / 7);
+
         let prompt = `
           Atue como um Personal Trainer de Elite e Fisiologista do Exercício.
           O aluno está executando o programa de treinamento "${treino.nome}".
@@ -303,33 +312,33 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
 
         if (tipoRelatorio === 'semanal') {
           prompt += `
-            OBJETIVO: Avaliar o desempenho da semana e fazer micro-ajustes para a próxima semana.
+            OBJETIVO: Avaliar o desempenho da Semana ${semanaAtual} (Período analisado: ${dataInicioBusca} a ${dataFimBusca}) e fazer micro-ajustes para a próxima semana.
 
-            DADOS REAIS DA SEMANA:
-            - Treinos concluídos: ${totalTreinosConcluidos}
+            DADOS REAIS DA SEMANA ${semanaAtual}:
+            - Treinos concluídos nestes 7 dias: ${totalTreinosConcluidos}
             - Tempo médio de treino: ${tempoMedioTreino}
-            - Evolução/Estagnação de Cargas (Comparativo início vs fim da semana): 
+            - Evolução/Estagnação de Cargas (Comparativo início vs fim desta semana): 
             ${destaquesCarga}
-            - Feedback do Aluno: 
+            - Feedback do Aluno nesta semana: 
             ${observacoesUsuario}
 
             DIRETRIZES DO RELATÓRIO (Formato Markdown):
-            1. Análise de Aderência e Volume: Comente sobre a frequência e o tempo.
+            1. Análise de Aderência e Volume: Comente sobre a frequência e o tempo deste microciclo específico.
             2. Análise de Cargas: Avalie a progressão relatada baseada nos dados.
             3. Resposta ao Feedback: Se houver relato de dor ou dificuldade, sugira adaptações técnicas.
             4. Meta da Próxima Semana: Dê uma instrução clara e única para os próximos 7 dias.
             
-            Tom: Direto, técnico e profissional.
+            Tom: Direto, técnico e profissional. Evite introduções genéricas.
           `;
         } else if (tipoRelatorio === 'final') {
           prompt += `
-            OBJETIVO: Fechamento da periodização (mesociclo) e diretrizes para o próximo ciclo.
+            OBJETIVO: Fechamento da periodização completa de ${semanaAtual} semanas (Período: ${treino.data_inicio} a ${hoje}) e diretrizes para o próximo ciclo.
 
-            DADOS GERAIS DO CICLO:
-            - Total de treinos realizados: ${totalTreinosConcluidos}
-            - Evolução Geral de Cargas no período: 
+            DADOS GERAIS DO CICLO COMPLETO:
+            - Total de treinos realizados no período: ${totalTreinosConcluidos}
+            - Evolução Geral de Cargas desde o dia 1: 
             ${destaquesCarga}
-            - Dificuldades recorrentes relatadas: 
+            - Dificuldades recorrentes relatadas no ciclo: 
             ${observacoesUsuario}
 
             DIRETRIZES DO RELATÓRIO FINAL (Formato Markdown):
