@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
-import { TrendingUp, Clock, Activity, Dumbbell, Layers, Bot, X } from 'lucide-react';
+import { TrendingUp, Clock, Activity, Dumbbell, Layers, Bot, X, Timer } from 'lucide-react';
 import api from '../services/api';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import ReactMarkdown from 'react-markdown'; // <-- IMPORT NOVO AQUI
+import ReactMarkdown from 'react-markdown'; 
 
 export function Progress() {
   const [stats, setStats] = useState({ totalTreinos: 0, tempoTotalHoras: 0 });
@@ -32,10 +32,18 @@ export function Progress() {
         ]);
         
         setStats(statsRes.data);
-        setWorkoutGroups(groupsRes.data);
+        
+        // --- FILTRA O CARDIO DO SELECT DO GRÁFICO ---
+        const filteredGroups = groupsRes.data.map((group: any) => ({
+          ...group,
+          exercicios: group.exercicios.filter((ex: any) => ex.grupo_pai?.trim().toLowerCase() !== 'cardio')
+        })).filter((group: any) => group.exercicios.length > 0);
+
+        setWorkoutGroups(filteredGroups);
         setMuscleStats(muscleRes.data);
-        if (groupsRes.data.length > 0 && groupsRes.data[0].exercicios.length > 0) {
-          setSelectedExercise(groupsRes.data[0].exercicios[0].id);
+        
+        if (filteredGroups.length > 0 && filteredGroups[0].exercicios.length > 0) {
+          setSelectedExercise(filteredGroups[0].exercicios[0].id);
         }
       } catch (error) {
         console.error('Erro ao buscar dados iniciais:', error);
@@ -99,6 +107,26 @@ export function Progress() {
     }
     return null;
   };
+
+  // --- SEPARAÇÃO DOS DADOS: FORÇA VS CARDIO ---
+  const forceStats = muscleStats.filter(grupo => grupo.grupo_pai?.trim().toLowerCase() !== 'cardio');
+  const cardioStatsRaw = muscleStats.filter(grupo => grupo.grupo_pai?.trim().toLowerCase() === 'cardio');
+
+  // Calcula os totais do cardio varrendo os exercícios dentro do grupo
+  let totalCardioMinutos = 0;
+  let totalCardioKm = 0;
+
+  cardioStatsRaw.forEach(grupo => {
+    grupo.exercicios?.forEach((ex: any) => {
+        // Tenta pegar os valores, garantindo que sejam convertidos para número se existirem
+        const minutos = ex.tempoRealMinutos || ex.tempo_real_minutos || 0;
+        const km = ex.distanciaRealKm || ex.distancia_real_km || 0;
+        
+        totalCardioMinutos += Number(minutos);
+        totalCardioKm += Number(km);
+    });
+  });
+
 
   return (
     <div className="p-6 text-white max-w-7xl mx-auto space-y-6">
@@ -235,18 +263,50 @@ export function Progress() {
         </div>
       </div>
 
-      {/* --- VOLUME SEMANAL POR GRUPO MUSCULAR --- */}
-      <div className="pt-4">
+      {/* --- NOVO: PAINEL DE CARDIO (Últimos 7 dias) --- */}
+      {cardioStatsRaw.length > 0 && (
+        <div className="pt-2">
+          <div className="flex items-center gap-2 mb-4">
+            <Timer className="w-5 h-5 text-emerald-500" />
+            <h2 className="text-xl font-bold">Cardio (Últimos 7 dias)</h2>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-[#112218] border border-[#193324] rounded-xl p-5 shadow-sm flex items-center gap-4">
+              <div className="p-3 bg-[#13ec6a]/10 text-[#13ec6a] rounded-lg">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm uppercase tracking-wider font-semibold">Tempo Total</p>
+                <p className="text-2xl font-bold text-white">{totalCardioMinutos} min</p>
+              </div>
+            </div>
+
+            <div className="bg-[#112218] border border-[#193324] rounded-xl p-5 shadow-sm flex items-center gap-4">
+              <div className="p-3 bg-[#13ec6a]/10 text-[#13ec6a] rounded-lg">
+                <Activity className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm uppercase tracking-wider font-semibold">Distância Total</p>
+                <p className="text-2xl font-bold text-white">{totalCardioKm} km</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- VOLUME SEMANAL POR GRUPO MUSCULAR (FORÇA) --- */}
+      <div className="pt-2">
         <div className="flex items-center gap-2 mb-4">
           <Layers className="w-5 h-5 text-emerald-500" />
-          <h2 className="text-xl font-bold">Volume Semanal (Últimos 7 dias)</h2>
+          <h2 className="text-xl font-bold">Volume de Força (Últimos 7 dias)</h2>
         </div>
         
-        {muscleStats.length === 0 ? (
-           <p className="text-gray-500 text-sm">Nenhum treino registrado nos últimos 7 dias.</p>
+        {forceStats.length === 0 ? (
+           <p className="text-gray-500 text-sm">Nenhum treino de força registrado nos últimos 7 dias.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {muscleStats.map((grupo, index) => (
+            {forceStats.map((grupo, index) => (
               <div key={index} className="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-sm">
                 
                 <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-3">

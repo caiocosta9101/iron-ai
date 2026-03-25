@@ -14,6 +14,7 @@ import {
   MessageSquarePlus,
   Square,
   Zap,
+  Activity // Ícone novo para o Cardio
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../services/api";
@@ -30,12 +31,19 @@ interface SerieExecucao {
 interface ExercicioExecucao {
   id: string;
   nome: string;
+  categoria: string; // NOVO: 'forca' ou 'cardio'
   equipamento: string;
-  seriesAlvo: number;
-  repsAlvo: string;
-  descansoSegundos: number;
+  seriesAlvo: number | null;
+  repsAlvo: string | null;
+  descansoSegundos: number | null;
+  tempoMetaMinutos: number | null; // NOVO
+  distanciaMetaKm: number | null;  // NOVO
   seriesFeitas: SerieExecucao[];
   observacoesUsuario: string;
+  // Campos de execução do Cardio
+  tempoRealMinutos: string; 
+  distanciaRealKm: string;
+  cardioConcluido: boolean;
 }
 
 export default function ActiveWorkout() {
@@ -109,7 +117,13 @@ export default function ActiveWorkout() {
         const listaFormatada: ExercicioExecucao[] = (
           diaTreino.exercicios_treino || []
         ).map((ex: any) => {
-          const seriesIniciais: SerieExecucao[] = Array.from({
+          
+          // --- APLICANDO A NORMALIZAÇÃO DA CATEGORIA AQUI ---
+          const categoriaNormalizada = ex.exercicios?.grupo_pai?.trim().toLowerCase();
+          const isCardio = categoriaNormalizada === 'cardio';
+
+          // Se for cardio, não precisa criar o array de séries
+          const seriesIniciais: SerieExecucao[] = isCardio ? [] : Array.from({
             length: ex.series || 3,
           }).map((_, i) => ({
             id: i,
@@ -119,20 +133,27 @@ export default function ActiveWorkout() {
             descansoRealizado: 0,
           }));
 
-          const repsString =
-            ex.repeticoes_min === ex.repeticoes_max
+          const repsString = isCardio 
+            ? null 
+            : (ex.repeticoes_min === ex.repeticoes_max
               ? `${ex.repeticoes_min}`
-              : `${ex.repeticoes_min}-${ex.repeticoes_max}`;
+              : `${ex.repeticoes_min}-${ex.repeticoes_max}`);
 
           return {
             id: ex.exercicios.id,
             nome: ex.exercicios.nome,
+            categoria: categoriaNormalizada || 'forca', // --- USANDO A CATEGORIA NORMALIZADA ---
             equipamento: ex.exercicios?.equipamentos?.nome || "Peso do Corpo",
-            seriesAlvo: ex.series || 3,
+            seriesAlvo: ex.series || null,
             repsAlvo: repsString,
-            descansoSegundos: ex.descanso_segundos || 60,
+            descansoSegundos: ex.descanso_segundos || null,
+            tempoMetaMinutos: ex.tempo_meta_minutos || null,
+            distanciaMetaKm: ex.distancia_meta_km || null,
             seriesFeitas: seriesIniciais,
             observacoesUsuario: "",
+            tempoRealMinutos: "",
+            distanciaRealKm: "",
+            cardioConcluido: false,
           };
         });
 
@@ -227,6 +248,23 @@ export default function ActiveWorkout() {
     setTempoDescanso(0);
   };
 
+  // --- MÉTODOS PARA O CARDIO ---
+  const handleUpdateCardio = (exIndex: number, campo: 'tempo' | 'distancia', valor: string) => {
+    const valorLimpo = valor.replace(/[^0-9.,]/g, "").replace(",", ".");
+    const novosExercicios = [...exercicios];
+    
+    if (campo === 'tempo') novosExercicios[exIndex].tempoRealMinutos = valorLimpo;
+    if (campo === 'distancia') novosExercicios[exIndex].distanciaRealKm = valorLimpo;
+    
+    setExercicios(novosExercicios);
+  };
+
+  const handleCheckCardio = (exIndex: number) => {
+    const novosExercicios = [...exercicios];
+    novosExercicios[exIndex].cardioConcluido = !novosExercicios[exIndex].cardioConcluido;
+    setExercicios(novosExercicios);
+  };
+
   // --- SALVAR PROGRESSO NO LOCALSTORAGE ---
   useEffect(() => {
     if (loading || exercicios.length === 0) return;
@@ -261,7 +299,6 @@ export default function ActiveWorkout() {
     isManualMode,
   ]);
 
-  // Atualizada para receber o campo "descanso"
   const handleUpdateValue = (
     exIndex: number,
     serieIndex: number,
@@ -312,6 +349,8 @@ export default function ActiveWorkout() {
         : tempoTotal;
 
       const exerciciosProcessados = exercicios.map((ex) => {
+        
+        // Trata séries se for força
         const seriesProcessadas = ex.seriesFeitas.map((serie) => {
           if (isManualMode && serie.peso !== "" && serie.reps !== "") {
             return { ...serie, concluido: true };
@@ -319,10 +358,14 @@ export default function ActiveWorkout() {
           return serie;
         });
 
+        // Passamos os dados de força e de cardio para o backend
         return {
           id: ex.id,
-          seriesFeitas: seriesProcessadas,
+          categoria: ex.categoria, // Informamos a categoria para o backend
+          seriesFeitas: seriesProcessadas, // Vazio se for cardio
           observacoes: ex.observacoesUsuario,
+          tempoRealMinutos: ex.tempoRealMinutos ? Number(ex.tempoRealMinutos) : null,
+          distanciaRealKm: ex.distanciaRealKm ? Number(ex.distanciaRealKm) : null,
         };
       });
 
@@ -375,7 +418,6 @@ export default function ActiveWorkout() {
             )}
           </div>
           
-          {/* BOTÃO DE MODO RÁPIDO COM TEXTO E COR */}
           <button
             onClick={() => {
               setIsManualMode(!isManualMode);
@@ -385,8 +427,8 @@ export default function ActiveWorkout() {
             }}
             className={`px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors shadow-sm text-[10px] uppercase font-bold border whitespace-nowrap ${
               isManualMode
-                ? "bg-[#13ec6a] text-[#112218] border-[#13ec6a]" // Modo Ativado (Sólido)
-                : "bg-[#13ec6a]/10 text-[#13ec6a] border-[#13ec6a]/30 hover:bg-[#13ec6a]/20 hover:border-[#13ec6a]/50" // Modo Desativado (Outline Verde)
+                ? "bg-[#13ec6a] text-[#112218] border-[#13ec6a]"
+                : "bg-[#13ec6a]/10 text-[#13ec6a] border-[#13ec6a]/30 hover:bg-[#13ec6a]/20 hover:border-[#13ec6a]/50"
             }`}
           >
             <Zap size={14} fill={isManualMode ? "currentColor" : "none"} />
@@ -398,149 +440,218 @@ export default function ActiveWorkout() {
 
       {/* LISTA DE EXERCÍCIOS */}
       <div className="flex-1 p-4 lg:p-6 max-w-3xl mx-auto w-full space-y-8">
-        {exercicios.map((ex, exIndex) => (
-          <div
-            key={ex.id}
-            className={`animate-in fade-in slide-in-from-bottom-4 duration-500 bg-[#193324]/20 p-4 rounded-2xl border ${isManualMode ? 'border-[#13ec6a]/30' : 'border-white/5'}`}
-          >
-            <div className="mb-4">
-              <div className="flex justify-between items-start mb-1">
-                <h2 className="text-xl font-black text-white leading-tight w-3/4">
-                  {ex.nome}
-                </h2>
-                {!isManualMode && (
-                  <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap bg-white/5 px-2 py-1 rounded flex items-center gap-1">
-                    <Timer size={10} /> Meta: {ex.descansoSegundos}s
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-[#92c9a8] text-sm mb-4">
-                <Dumbbell size={14} />
-                <span>
-                  {ex.seriesAlvo} séries x {ex.repsAlvo} reps
-                </span>
-              </div>
+        {exercicios.map((ex, exIndex) => {
+          const isCardio = ex.categoria === 'cardio';
 
-              {/* Tabela de Séries (Sempre 12 Colunas) */}
-              <div className="space-y-2">
-                <div className="grid grid-cols-12 gap-2 text-[#92c9a8] text-[10px] uppercase font-bold tracking-widest px-2 opacity-50">
-                  <div className="col-span-2 text-center">Set</div>
-                  <div className="col-span-3 text-center">KG</div>
-                  <div className="col-span-3 text-center">Reps</div>
-                  {isManualMode ? (
-                    <div className="col-span-4 text-center">Pausa (s)</div>
-                  ) : (
-                    <div className="col-span-4 text-center">Check</div>
+          return (
+            <div
+              key={ex.id}
+              className={`animate-in fade-in slide-in-from-bottom-4 duration-500 bg-[#193324]/20 p-4 rounded-2xl border ${isManualMode ? 'border-[#13ec6a]/30' : 'border-white/5'}`}
+            >
+              <div className="mb-4">
+                <div className="flex justify-between items-start mb-1">
+                  <h2 className="text-xl font-black text-white leading-tight w-3/4 flex items-center gap-2">
+                    {ex.nome}
+                  </h2>
+                  
+                  {/* Etiqueta de Descanso (Força) ou Etiqueta de Cardio */}
+                  {!isManualMode && !isCardio && ex.descansoSegundos && (
+                    <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap bg-white/5 px-2 py-1 rounded flex items-center gap-1">
+                      <Timer size={10} /> Meta: {ex.descansoSegundos}s
+                    </div>
+                  )}
+                  {isCardio && (
+                    <div className="text-[10px] text-[#13ec6a] font-bold whitespace-nowrap bg-[#13ec6a]/10 px-2 py-1 rounded flex items-center gap-1">
+                      <Activity size={12} /> AERÓBICO
+                    </div>
                   )}
                 </div>
 
-                {ex.seriesFeitas.map((serie, serieIndex) => {
-                  const hasValues = serie.peso !== "" && serie.reps !== "";
-                  const showAsCompleted = serie.concluido || (isManualMode && hasValues);
+                {/* Subtítulo (Séries ou Meta de Cardio) */}
+                <div className="flex items-center gap-2 text-[#92c9a8] text-sm mb-4">
+                  {!isCardio ? (
+                    <>
+                      <Dumbbell size={14} />
+                      <span>{ex.seriesAlvo} séries x {ex.repsAlvo} reps</span>
+                    </>
+                  ) : (
+                    <>
+                      <Timer size={14} />
+                      <span>
+                        Meta: {ex.tempoMetaMinutos ? `${ex.tempoMetaMinutos} min` : 'Livre'} 
+                        {ex.distanciaMetaKm ? ` • ${ex.distanciaMetaKm} km` : ''}
+                      </span>
+                    </>
+                  )}
+                </div>
 
-                  return (
-                    <div
-                      key={serie.id}
-                      className={`
-                        grid grid-cols-12 gap-2 items-center p-2 rounded-lg border transition-all duration-200
-                        ${showAsCompleted ? "bg-[#13ec6a]/5 border-[#13ec6a]/20" : "bg-[#193324]/50 border-white/5"}
-                      `}
-                    >
-                      <div className="col-span-2 flex justify-center flex-col items-center">
-                        <span
-                          className={`
-                            font-bold text-sm w-7 h-7 flex items-center justify-center rounded-full
-                            ${showAsCompleted ? "bg-[#13ec6a] text-[#112218]" : "bg-white/10 text-white/50"}
-                          `}
-                        >
-                          {serieIndex + 1}
-                        </span>
-                        {serie.descansoRealizado && !isManualMode ? (
-                          <span className="text-[9px] text-[#13ec6a] mt-1 font-mono">
-                            {serie.descansoRealizado}s
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {/* INPUT DE PESO */}
-                      <div className="col-span-3">
-                        <input
-                          type="tel"
-                          inputMode="decimal"
-                          maxLength={6}
-                          value={serie.peso}
-                          onChange={(e) =>
-                            handleUpdateValue(exIndex, serieIndex, "peso", e.target.value)
-                          }
-                          placeholder="-"
-                          className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`}
-                        />
-                      </div>
-
-                      {/* INPUT DE REPS */}
-                      <div className="col-span-3">
-                        <input
-                          type="tel"
-                          inputMode="numeric"
-                          maxLength={3}
-                          value={serie.reps}
-                          onChange={(e) =>
-                            handleUpdateValue(exIndex, serieIndex, "reps", e.target.value)
-                          }
-                          placeholder={ex.repsAlvo.split("-")[0]}
-                          className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`}
-                        />
-                      </div>
-
-                      {/* INPUT DE DESCANSO OU CHECK */}
+                {/* ========================================= */}
+                {/* RENDERIZAÇÃO CONDICIONAL: FORÇA VS CARDIO   */}
+                {/* ========================================= */}
+                {!isCardio ? (
+                  // Tabela de FORÇA Clássica
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-12 gap-2 text-[#92c9a8] text-[10px] uppercase font-bold tracking-widest px-2 opacity-50">
+                      <div className="col-span-2 text-center">Set</div>
+                      <div className="col-span-3 text-center">KG</div>
+                      <div className="col-span-3 text-center">Reps</div>
                       {isManualMode ? (
-                        <div className="col-span-4">
-                          <input
-                            type="tel"
-                            inputMode="numeric"
-                            maxLength={3}
-                            value={serie.descansoRealizado || ""}
-                            onChange={(e) =>
-                              handleUpdateValue(exIndex, serieIndex, "descanso", e.target.value)
-                            }
-                            placeholder={`${ex.descansoSegundos}s`}
-                            className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`}
-                          />
-                        </div>
+                        <div className="col-span-4 text-center">Pausa (s)</div>
                       ) : (
-                        <div className="col-span-4 flex justify-center">
-                          <button
-                            onClick={() => handleCheckSet(exIndex, serieIndex)}
-                            className={`
-                              h-9 w-full rounded flex items-center justify-center transition-all active:scale-95
-                              ${serie.concluido ? "bg-[#13ec6a]/20 text-[#13ec6a]" : "bg-white/5 text-slate-500 hover:bg-white/10"}
-                            `}
-                          >
-                            {serie.concluido ? <CircleCheck size={20} /> : <Circle size={20} />}
-                          </button>
-                        </div>
+                        <div className="col-span-4 text-center">Check</div>
                       )}
                     </div>
-                  );
-                })}
-              </div>
 
-              <div className="mt-4 pt-4 border-t border-white/5">
-                <div className="flex items-center gap-2 mb-2 text-slate-400 text-xs font-bold uppercase tracking-widest">
-                  <MessageSquarePlus size={14} /> Observações / Dores
+                    {ex.seriesFeitas.map((serie, serieIndex) => {
+                      const hasValues = serie.peso !== "" && serie.reps !== "";
+                      const showAsCompleted = serie.concluido || (isManualMode && hasValues);
+
+                      return (
+                        <div
+                          key={serie.id}
+                          className={`
+                            grid grid-cols-12 gap-2 items-center p-2 rounded-lg border transition-all duration-200
+                            ${showAsCompleted ? "bg-[#13ec6a]/5 border-[#13ec6a]/20" : "bg-[#193324]/50 border-white/5"}
+                          `}
+                        >
+                          <div className="col-span-2 flex justify-center flex-col items-center">
+                            <span
+                              className={`
+                                font-bold text-sm w-7 h-7 flex items-center justify-center rounded-full
+                                ${showAsCompleted ? "bg-[#13ec6a] text-[#112218]" : "bg-white/10 text-white/50"}
+                              `}
+                            >
+                              {serieIndex + 1}
+                            </span>
+                            {serie.descansoRealizado && !isManualMode ? (
+                              <span className="text-[9px] text-[#13ec6a] mt-1 font-mono">
+                                {serie.descansoRealizado}s
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="col-span-3">
+                            <input
+                              type="tel"
+                              inputMode="decimal"
+                              maxLength={6}
+                              value={serie.peso}
+                              onChange={(e) => handleUpdateValue(exIndex, serieIndex, "peso", e.target.value)}
+                              placeholder="-"
+                              className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`}
+                            />
+                          </div>
+
+                          <div className="col-span-3">
+                            <input
+                              type="tel"
+                              inputMode="numeric"
+                              maxLength={3}
+                              value={serie.reps}
+                              onChange={(e) => handleUpdateValue(exIndex, serieIndex, "reps", e.target.value)}
+                              placeholder={ex.repsAlvo?.split("-")[0]}
+                              className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`}
+                            />
+                          </div>
+
+                          {isManualMode ? (
+                            <div className="col-span-4">
+                              <input
+                                type="tel"
+                                inputMode="numeric"
+                                maxLength={3}
+                                value={serie.descansoRealizado || ""}
+                                onChange={(e) => handleUpdateValue(exIndex, serieIndex, "descanso", e.target.value)}
+                                placeholder={`${ex.descansoSegundos}s`}
+                                className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`}
+                              />
+                            </div>
+                          ) : (
+                            <div className="col-span-4 flex justify-center">
+                              <button
+                                onClick={() => handleCheckSet(exIndex, serieIndex)}
+                                className={`
+                                  h-9 w-full rounded flex items-center justify-center transition-all active:scale-95
+                                  ${serie.concluido ? "bg-[#13ec6a]/20 text-[#13ec6a]" : "bg-white/5 text-slate-500 hover:bg-white/10"}
+                                `}
+                              >
+                                {serie.concluido ? <CircleCheck size={20} /> : <Circle size={20} />}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  // =========================================
+                  // TELA DO CARDIO 
+                  // =========================================
+                  <div className={`p-4 rounded-xl border transition-all duration-300 ${ex.cardioConcluido || (isManualMode && (ex.tempoRealMinutos || ex.distanciaRealKm)) ? 'bg-[#13ec6a]/5 border-[#13ec6a]/30' : 'bg-black/20 border-white/5'}`}>
+                    <div className="grid grid-cols-2 gap-4">
+                      
+                      {/* Input Tempo */}
+                      <div>
+                        <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">Tempo Feito (Min)</label>
+                        <div className="relative">
+                          <input
+                            type="tel"
+                            inputMode="decimal"
+                            value={ex.tempoRealMinutos}
+                            onChange={(e) => handleUpdateCardio(exIndex, 'tempo', e.target.value)}
+                            placeholder={ex.tempoMetaMinutos ? String(ex.tempoMetaMinutos) : "30"}
+                            className="w-full bg-[#112218] border border-white/10 rounded-lg h-12 text-center text-white font-bold text-lg focus:border-[#13ec6a] outline-none transition-colors"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Input Distância */}
+                      <div>
+                        <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">Distância (KM)</label>
+                        <div className="relative">
+                          <input
+                            type="tel"
+                            inputMode="decimal"
+                            value={ex.distanciaRealKm}
+                            onChange={(e) => handleUpdateCardio(exIndex, 'distancia', e.target.value)}
+                            placeholder={ex.distanciaMetaKm ? String(ex.distanciaMetaKm) : "5.0"}
+                            className="w-full bg-[#112218] border border-white/10 rounded-lg h-12 text-center text-white font-bold text-lg focus:border-[#13ec6a] outline-none transition-colors"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {!isManualMode && (
+                      <button
+                        onClick={() => handleCheckCardio(exIndex)}
+                        className={`mt-4 w-full h-12 rounded-lg font-bold flex items-center justify-center gap-2 transition-all active:scale-95 ${
+                          ex.cardioConcluido 
+                            ? "bg-[#13ec6a]/20 text-[#13ec6a] border border-[#13ec6a]/50" 
+                            : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                        }`}
+                      >
+                        {ex.cardioConcluido ? <><CircleCheck size={20} /> Cardio Concluído</> : "Marcar como Feito"}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Observações Livres (Serve para Força e Cardio) */}
+                <div className="mt-4 pt-4 border-t border-white/5">
+                  <div className="flex items-center gap-2 mb-2 text-slate-400 text-xs font-bold uppercase tracking-widest">
+                    <MessageSquarePlus size={14} /> Observações / {isCardio ? 'Pace e Fôlego' : 'Dores'}
+                  </div>
+                  <textarea
+                    value={ex.observacoesUsuario}
+                    onChange={(e) => handleObservacaoChange(exIndex, e.target.value)}
+                    placeholder={isCardio ? "Ex: Corri super bem, pace bom hoje..." : "Ex: Senti o ombro estalar, aumentei carga fácil..."}
+                    className="w-full bg-[#112218] border border-white/10 rounded-lg p-3 text-sm text-white placeholder:text-slate-600 focus:border-[#13ec6a] outline-none min-h-[60px] resize-none"
+                  />
                 </div>
-                <textarea
-                  value={ex.observacoesUsuario}
-                  onChange={(e) =>
-                    handleObservacaoChange(exIndex, e.target.value)
-                  }
-                  placeholder="Ex: Senti o ombro estalar, aumentei carga fácil..."
-                  className="w-full bg-[#112218] border border-white/10 rounded-lg p-3 text-sm text-white placeholder:text-slate-600 focus:border-[#13ec6a] outline-none min-h-[60px] resize-none"
-                />
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* FOOTER */}

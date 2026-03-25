@@ -22,6 +22,7 @@ const generateSchema = z.object({
   dias: z.number().int().min(1).max(7),
   tempo: z.number().int().min(15).max(180),
   nivel: z.enum(['Iniciante', 'Intermediário', 'Avançado']),
+  incluir_cardio: z.boolean().optional().default(true), // Novo campo de Cardio
 });
 
 // =============================================================
@@ -43,7 +44,7 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: parsed.error!.issues });
   }
 
-  const { objetivo, idade, peso, altura, limitacoes, dias, tempo, nivel } = parsed.data;
+  const { objetivo, idade, peso, altura, limitacoes, dias, tempo, nivel, incluir_cardio } = parsed.data;
 
   // GUARDA 3: RATE LIMIT POR USUÁRIO
   const hoje = new Date().toISOString().split('T')[0];
@@ -69,18 +70,19 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
   // =============================================================
   // GUARDA 4: BUSCAR BIBLIOTECA PARA LIMITAR A IA
   // =============================================================
+  // INCLUINDO A COLUNA CATEGORIA
   const { data: exerciciosDB, error: dbError } = await supabase
     .from('exercicios')
-    .select('id, nome, grupo_pai, musculo_primario, equipamentos(nome)');
+    .select('id, nome, categoria, grupo_pai, musculo_primario, equipamentos(nome)');
 
   if (dbError) {
     console.error('Erro ao buscar biblioteca para a IA:', dbError);
     return res.status(500).json({ error: 'Erro ao conectar com a base de exercícios.' });
   }
 
-  // Formata os exercícios numa lista de texto para a IA ler, incluindo o ID invisível para o usuário final
+  // Formata os exercícios numa lista de texto para a IA ler
   const bibliotecaContext = exerciciosDB && exerciciosDB.length > 0
-    ? exerciciosDB.map((ex: any) => `- [ID: ${ex.id}] ${ex.nome} (Foco: ${ex.musculo_primario} | Equipamento: ${ex.equipamentos?.nome || 'Peso Corporal'})`).join('\n')
+    ? exerciciosDB.map((ex: any) => `- [ID: ${ex.id} | Tipo: ${ex.categoria.toUpperCase()}] ${ex.nome} (Foco: ${ex.musculo_primario} | Equipamento: ${ex.equipamentos?.nome || 'Peso Corporal'})`).join('\n')
     : 'Nenhum exercício encontrado.';
 
   try {
@@ -96,9 +98,14 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
       ? sanitize(limitacoes)
       : 'Nenhuma restrição declarada.';
 
+    // Adiciona diretriz de cardio dinamicamente
+    const diretrizCardio = incluir_cardio 
+      ? `O aluno deseja INCLUIR exercícios da categoria CARDIO na periodização. Use sua expertise para distribuí-los adequadamente.`
+      : `O aluno NÃO DESEJA cardio. Foque EXCLUSIVAMENTE em exercícios da categoria FORCA.`;
+
     const prompt = `
       Atue como um Personal Trainer de elite e fisiologista.
-      Crie um plano de treino de musculação completo e seguro.
+      Crie um plano de treino completo e seguro.
 
       DADOS DO ALUNO:
       - Perfil: ${idade} anos, ${peso}kg, ${altura}cm.
@@ -108,6 +115,9 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
       
       ⚠️ RESTRIÇÕES MÉDICAS / LESÕES:
       "${limitacoesSafe}"
+
+      🏃 DIRETRIZ DE CARDIO:
+      ${diretrizCardio}
 
       📚 BIBLIOTECA DE EXERCÍCIOS PERMITIDOS (CRÍTICO):
       Você é OBRIGADO a montar o treino utilizando EXCLUSIVAMENTE os exercícios listados abaixo.
@@ -120,26 +130,28 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
       2. Substitua movimentos perigosos por variantes biomecanicamente seguras da Biblioteca.
 
       FORMATO DE RESPOSTA (JSON OBRIGATÓRIO):
-      Responda apenas com um objeto JSON seguindo estritamente esta estrutura (atenção aos campos numéricos):
+      Responda apenas com um objeto JSON seguindo estritamente esta estrutura (atenção às colunas nulas para cardio):
       {
         "nome": "Nome criativo e motivador do programa",
         "descricao": "Explicação técnica resumida do foco da periodização",
-        "duracao_semanas": 6, // Estipule entre 4 a 8 semanas para a duração ideal deste ciclo
+        "duracao_semanas": 6, 
         "dias": [
           {
             "nome": "Treino A - [Foco]",
-            "foco": "Empurrar/Puxar/Pernas/Fullbody",
+            "foco": "Empurrar/Puxar/Pernas/Fullbody/Cardio",
             "exercicios": [
               {
                 "exercicio_id": "O ID exato copiado da tag [ID: ...] da biblioteca",
-                "nome": "Nome EXATO do Exercício copiado da biblioteca",
+                "nome": "Nome EXATO do Exercício",
                 "grupo_pai": "Categoria principal",
                 "musculo_primario": "Músculo alvo",
-                "series": 4,
-                "repeticoes_min": 8,
-                "repeticoes_max": 12,
-                "descanso_segundos": 60,
-                "observacao": "Dica de segurança ou técnica"
+                "series": 4, // NULO se o exercício for do tipo CARDIO
+                "repeticoes_min": 8, // NULO se o exercício for do tipo CARDIO
+                "repeticoes_max": 12, // NULO se o exercício for do tipo CARDIO
+                "descanso_segundos": 60, // NULO se o exercício for do tipo CARDIO
+                "tempo_meta_minutos": null, // Preencha APENAS se for CARDIO (ex: 30)
+                "distancia_meta_km": null, // Preencha APENAS se for CARDIO (ex: 5.5)
+                "observacao": "Dica de segurança, técnica ou pace alvo"
               }
             ]
           }
@@ -182,7 +194,6 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
     
     const hoje = new Date().toISOString().split('T')[0];
 
-    // Busca todos os treinos ativos
     const { data: treinosAtivos, error: treinosError } = await supabase
       .from('treinos')
       .select('id, usuario_id, data_inicio, data_fim, nome')
@@ -194,43 +205,54 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
       throw new Error('Erro ao buscar treinos ativos no banco.');
     }
 
+    const activeTreinoIds = treinosAtivos.map(t => t.id);
+    const { data: relatoriosExistentes } = await supabase
+      .from('relatorios_ia')
+      .select('treino_id')
+      .in('treino_id', activeTreinoIds)
+      .eq('tipo', 'semanal');
+
+    const contagemRelatorios: Record<number, number> = {};
+    relatoriosExistentes?.forEach(rel => {
+      contagemRelatorios[rel.treino_id] = (contagemRelatorios[rel.treino_id] || 0) + 1;
+    });
+
     const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
     let relatoriosGerados = 0;
 
     for (const treino of treinosAtivos) {
       
-      const dataInicio = new Date(treino.data_inicio);
-      const dataFim = new Date(treino.data_fim);
-      // Ajuste para criar um objeto Date zerado considerando a string YYYY-MM-DD
       const dataHoje = new Date(hoje + 'T00:00:00');
+      const dataInicioTreino = new Date(treino.data_inicio + 'T00:00:00');
 
-      // Corrige problema de fuso cruzando a diferença pura de dias UTC
-      const diffTime = Math.abs(dataHoje.getTime() - new Date(treino.data_inicio + 'T00:00:00').getTime());
+      const diffTime = Math.abs(dataHoje.getTime() - dataInicioTreino.getTime());
       const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      
+      const semanasDecorridas = Math.floor(diffDays / 7);
+      const qtdJaGerada = contagemRelatorios[treino.id] || 0;
 
       let tipoRelatorio: 'semanal' | 'final' | null = null;
+      let semanaSendoAnalisada = 0;
 
-      if (hoje === treino.data_fim) {
+      if (hoje >= treino.data_fim) {
         tipoRelatorio = 'final';
-      } else if (diffDays > 0 && diffDays % 7 === 0) {
+      } else if (semanasDecorridas > qtdJaGerada) {
         tipoRelatorio = 'semanal';
+        semanaSendoAnalisada = qtdJaGerada + 1; 
       }
 
       if (tipoRelatorio) {
         
-        // ====================================================================
-        // 1. COLETA DE DADOS REAIS DA SEMANA OU PERÍODO (O "TREINO REAL")
-        // ====================================================================
-        const dataFimBusca = hoje;
-        let dataInicioBusca = treino.data_inicio;
+        const dataInicioBusca = treino.data_inicio;
+        
+        const dataCorte = new Date(treino.data_inicio + 'T00:00:00');
+        dataCorte.setDate(dataCorte.getDate() + (semanaSendoAnalisada * 7));
+        
+        const dataFimBusca = tipoRelatorio === 'semanal' 
+          ? dataCorte.toISOString().split('T')[0] 
+          : hoje;
 
-        // FILTRO CRUCIAL: Se for semanal, pega apenas os últimos 7 dias!
-        if (tipoRelatorio === 'semanal') {
-          const seteDiasAtras = new Date(dataHoje);
-          seteDiasAtras.setDate(seteDiasAtras.getDate() - 7);
-          dataInicioBusca = seteDiasAtras.toISOString().split('T')[0];
-        }
-
+        // INCLUINDO DADOS DE CARDIO NA QUERY
         const { data: sessoes, error: sessoesError } = await supabase
           .from('historico_sessoes')
           .select(`
@@ -239,7 +261,9 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
             historico_execucao_exercicio (
               observacoes,
               cargas_kg,
-              exercicios ( nome )
+              tempo_real_minutos,
+              distancia_real_km,
+              exercicios ( nome, categoria )
             )
           `)
           .eq('usuario_id', treino.usuario_id)
@@ -252,7 +276,6 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
           continue; 
         }
 
-        // PROCESSAMENTO DE DADOS
         const totalTreinosConcluidos = sessoes?.length || 0;
         let tempoTotal = 0;
         const observacoesArray: string[] = [];
@@ -265,12 +288,38 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
             const nomeExercicio = Array.isArray(exec.exercicios) 
                 ? exec.exercicios[0]?.nome 
                 : exec.exercicios?.nome || 'Exercício Desconhecido';
+            
+            const categoria = Array.isArray(exec.exercicios) 
+                ? exec.exercicios[0]?.categoria 
+                : exec.exercicios?.categoria;
 
-            if (exec.observacoes && exec.observacoes.trim() !== '') {
-              observacoesArray.push(`- ${nomeExercicio}: ${exec.observacoes}`);
+            // ==========================================
+            // LÓGICA DE CARDIO (Cálculo de Pace)
+            // ==========================================
+            let textoCardio = "";
+            if (categoria === 'cardio' && (exec.tempo_real_minutos || exec.distancia_real_km)) {
+              if (exec.tempo_real_minutos && exec.distancia_real_km) {
+                const paceDecimal = exec.tempo_real_minutos / exec.distancia_real_km;
+                const paceMinutos = Math.floor(paceDecimal);
+                const paceSegundos = Math.round((paceDecimal - paceMinutos) * 60);
+                const paceFormatado = `${paceMinutos}:${paceSegundos.toString().padStart(2, '0')}`;
+                textoCardio = ` [Desempenho: ${exec.distancia_real_km}km em ${exec.tempo_real_minutos}min | Pace: ${paceFormatado}/km]`;
+              } else {
+                textoCardio = ` [Desempenho: ${exec.tempo_real_minutos ? exec.tempo_real_minutos + 'min ' : ''}${exec.distancia_real_km ? exec.distancia_real_km + 'km' : ''}]`;
+              }
             }
 
-            if (exec.cargas_kg && exec.cargas_kg.length > 0) {
+            // Agrupa observações com o desempenho de cardio (se houver)
+            if (exec.observacoes && exec.observacoes.trim() !== '') {
+              observacoesArray.push(`- ${nomeExercicio}${textoCardio}: ${exec.observacoes}`);
+            } else if (textoCardio !== "") {
+              observacoesArray.push(`- ${nomeExercicio}${textoCardio}`);
+            }
+
+            // ==========================================
+            // LÓGICA DE FORÇA (Picos de Carga)
+            // ==========================================
+            if (categoria !== 'cardio' && exec.cargas_kg && exec.cargas_kg.length > 0) {
               const cargaMaxDoDia = Math.max(...exec.cargas_kg);
               if (!evoluçãoCargasMap[nomeExercicio]) evoluçãoCargasMap[nomeExercicio] = [];
               evoluçãoCargasMap[nomeExercicio].push(cargaMaxDoDia);
@@ -300,11 +349,6 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
           .filter(Boolean)
           .join('\n') || "Cargas mantidas constantes ou dados insuficientes.";
 
-        // ====================================================================
-        // 2. CONSTRUÇÃO DO PROMPT
-        // ====================================================================
-        const semanaAtual = Math.floor(diffDays / 7);
-
         let prompt = `
           Atue como um Personal Trainer de Elite e Fisiologista do Exercício.
           O aluno está executando o programa de treinamento "${treino.nome}".
@@ -312,33 +356,34 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
 
         if (tipoRelatorio === 'semanal') {
           prompt += `
-            OBJETIVO: Avaliar o desempenho da Semana ${semanaAtual} (Período analisado: ${dataInicioBusca} a ${dataFimBusca}) e fazer micro-ajustes para a próxima semana.
+            OBJETIVO: Avaliar o progresso ACUMULADO até a Semana ${semanaSendoAnalisada} (Período analisado: ${dataInicioBusca} a ${dataFimBusca}) e fazer micro-ajustes para a próxima semana.
 
-            DADOS REAIS DA SEMANA ${semanaAtual}:
-            - Treinos concluídos nestes 7 dias: ${totalTreinosConcluidos}
-            - Tempo médio de treino: ${tempoMedioTreino}
-            - Evolução/Estagnação de Cargas (Comparativo início vs fim desta semana): 
+            DADOS DE TODO O HISTÓRICO ATÉ O MOMENTO:
+            - Total de treinos concluídos no ciclo: ${totalTreinosConcluidos}
+            - Tempo médio geral de treino: ${tempoMedioTreino}
+            - Evolução/Estagnação de Cargas (Comparativo desde o Dia 1 até hoje): 
             ${destaquesCarga}
-            - Feedback do Aluno nesta semana: 
+            - Histórico completo de Feedback do Aluno: 
             ${observacoesUsuario}
 
             DIRETRIZES DO RELATÓRIO (Formato Markdown):
-            1. Análise de Aderência e Volume: Comente sobre a frequência e o tempo deste microciclo específico.
-            2. Análise de Cargas: Avalie a progressão relatada baseada nos dados.
-            3. Resposta ao Feedback: Se houver relato de dor ou dificuldade, sugira adaptações técnicas.
+            1. Análise de Consistência: Avalie o volume total acumulado.
+            2. Análise de Cargas e Cardio: Avalie a progressão de cargas e o Pace/Tempo nos exercícios aeróbicos.
+            3. Resposta ao Feedback: Adapte baseado nas dores ou facilidades acumuladas.
             4. Meta da Próxima Semana: Dê uma instrução clara e única para os próximos 7 dias.
             
             Tom: Direto, técnico e profissional. Evite introduções genéricas.
           `;
         } else if (tipoRelatorio === 'final') {
+          const totalSemanasDoCiclo = Math.floor(diffDays / 7);
           prompt += `
-            OBJETIVO: Fechamento da periodização completa de ${semanaAtual} semanas (Período: ${treino.data_inicio} a ${hoje}) e diretrizes para o próximo ciclo.
+            OBJETIVO: Fechamento da periodização completa de ${totalSemanasDoCiclo} semanas (Período: ${treino.data_inicio} a ${hoje}) e diretrizes para o próximo ciclo.
 
             DADOS GERAIS DO CICLO COMPLETO:
             - Total de treinos realizados no período: ${totalTreinosConcluidos}
             - Evolução Geral de Cargas desde o dia 1: 
             ${destaquesCarga}
-            - Dificuldades recorrentes relatadas no ciclo: 
+            - Dificuldades recorrentes relatadas no ciclo e Desempenho Aeróbico: 
             ${observacoesUsuario}
 
             DIRETRIZES DO RELATÓRIO FINAL (Formato Markdown):
@@ -357,7 +402,6 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
         const result = await model.generateContent(prompt);
         const conteudoIA = result.response.text();
 
-        // Salva o relatório no banco de dados
         await supabase.from('relatorios_ia').insert({
           usuario_id: treino.usuario_id,
           treino_id: treino.id,
@@ -365,7 +409,6 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
           conteudo: conteudoIA
         });
 
-        // Se for final, conclui o treino
         if (tipoRelatorio === 'final') {
           await supabase
             .from('treinos')
@@ -395,7 +438,7 @@ export const getUserReports = async (req: AuthRequest, res: Response) => {
   try {
     const { data, error } = await supabase
       .from('relatorios_ia')
-      .select('*, treinos(nome)') // Traz os dados do relatório e o nome do treino vinculado
+      .select('*, treinos(nome)')
       .eq('usuario_id', req.userId)
       .order('data_geracao', { ascending: false });
 

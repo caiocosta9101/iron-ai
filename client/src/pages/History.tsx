@@ -8,7 +8,7 @@ import { ptBR } from 'date-fns/locale';
 import { 
   X, Clock, Dumbbell, Calendar, MessageSquare, 
   ChevronLeft, ChevronRight, Copy, Image as ImageIcon, FileText, 
-  FileJson, FileCode2 // Ícones novos importados
+  FileJson, FileCode2, Activity // Importamos a Activity pro Cardio
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../services/api';
@@ -79,10 +79,20 @@ export default function History() {
 
     workoutDetails.exercicios.forEach((item: any) => {
       texto += `🔸 *${item.exercicios?.nome}*\n`;
-      item.cargas_kg.forEach((carga: number, index: number) => {
-        const reps = item.repeticoes[index];
-        texto += `   Série ${index + 1}: ${carga}kg x ${reps} reps\n`;
-      });
+      
+      const isCardio = item.exercicios?.grupo_pai?.trim().toLowerCase() === 'cardio';
+      
+      if (isCardio) {
+        const tempo = item.tempo_real_minutos || item.tempoRealMinutos;
+        const dist = item.distancia_real_km || item.distanciaRealKm;
+        if (tempo) texto += `  ⏱️ Tempo: ${tempo} min\n`;
+        if (dist) texto += `  🏃 Distância: ${dist} km\n`;
+      } else {
+        item.cargas_kg?.forEach((carga: number, index: number) => {
+          const reps = item.repeticoes[index];
+          texto += `   Série ${index + 1}: ${carga}kg x ${reps} reps\n`;
+        });
+      }
       texto += `\n`;
     });
 
@@ -94,7 +104,6 @@ export default function History() {
     });
   };
 
-  // 1. Nova Função: Exportar para Markdown
   const handleCopyMarkdown = () => {
     if (!workoutDetails) return;
 
@@ -109,22 +118,28 @@ export default function History() {
       md += `### ${item.exercicios?.nome}\n`;
       md += `*${item.exercicios?.grupo_pai} | Foco: ${item.exercicios?.musculo_primario}*\n\n`;
       
-      // Cabeçalho da tabela com espaçamento fixo
-      md += `| Série | Carga   | Repetições | Descanso |\n`;
-      md += `| :---: | :-----: | :--------: | :------: |\n`;
-      
-      item.cargas_kg.forEach((carga: number, index: number) => {
-        const reps = item.repeticoes[index];
-        const descanso = formatTime(item.descansos_segundos[index]);
-        
-        // Formata as variáveis adicionando espaços (padding) para alinhar as colunas
-        const colSerie = String(index + 1).padEnd(5);
-        const colCarga = `${carga} kg`.padEnd(7);
-        const colReps = String(reps).padEnd(10);
-        const colDesc = String(descanso).padEnd(8);
+      const isCardio = item.exercicios?.grupo_pai?.trim().toLowerCase() === 'cardio';
 
-        md += `| ${colSerie} | ${colCarga} | ${colReps} | ${colDesc} |\n`;
-      });
+      if (isCardio) {
+        const tempo = item.tempo_real_minutos || item.tempoRealMinutos;
+        const dist = item.distancia_real_km || item.distanciaRealKm;
+        md += `**Tempo:** ${tempo ? `${tempo} min` : '-'} | **Distância:** ${dist ? `${dist} km` : '-'}\n`;
+      } else {
+        md += `| Série | Carga   | Repetições | Descanso |\n`;
+        md += `| :---: | :-----: | :--------: | :------: |\n`;
+        
+        item.cargas_kg?.forEach((carga: number, index: number) => {
+          const reps = item.repeticoes[index];
+          const descanso = formatTime(item.descansos_segundos[index]);
+          
+          const colSerie = String(index + 1).padEnd(5);
+          const colCarga = `${carga} kg`.padEnd(7);
+          const colReps = String(reps).padEnd(10);
+          const colDesc = String(descanso).padEnd(8);
+
+          md += `| ${colSerie} | ${colCarga} | ${colReps} | ${colDesc} |\n`;
+        });
+      }
 
       if (item.observacoes) {
         md += `\n> **Observação:** ${item.observacoes}\n`;
@@ -140,7 +155,6 @@ export default function History() {
     });
   };
 
-  // 2. Nova Função: Exportar para JSON (Download)
   const handleDownloadJSON = () => {
     if (!workoutDetails) return;
 
@@ -254,7 +268,6 @@ export default function History() {
   
   const handleGoToToday = () => setCurrentDate(new Date());
 
-  // Variáveis auxiliares de data
   const currentYear = currentDate.getFullYear();
   const currentMonthIndex = currentDate.getMonth();
   const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -276,10 +289,8 @@ export default function History() {
           <p className="text-gray-400 text-sm">Acompanhe sua consistência</p>
         </div>
         
-        {/* CONTROLES DE NAVEGAÇÃO */}
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto">
           
-          {/* Controle de Mês */}
           <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg p-1 shadow-sm w-full sm:w-auto">
             <button onClick={handlePrevMonth} className="p-2 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-white">
               <ChevronLeft className="w-5 h-5" />
@@ -302,7 +313,6 @@ export default function History() {
             </button>
           </div>
 
-          {/* Controle de Ano */}
           <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg p-1 shadow-sm w-full sm:w-auto">
             <button onClick={handlePrevYear} className="p-2 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-white">
               <ChevronLeft className="w-5 h-5" />
@@ -328,7 +338,6 @@ export default function History() {
         </div>
       </div>
       
-      {/* Botão para voltar para o mês atual */}
       {(currentDate.getMonth() !== new Date().getMonth() || currentDate.getFullYear() !== new Date().getFullYear()) && (
         <div className="flex justify-end mb-4">
           <button onClick={handleGoToToday} className="text-xs text-emerald-500 hover:text-emerald-400 font-medium transition-colors">
@@ -337,7 +346,6 @@ export default function History() {
         </div>
       )}
 
-      {/* CALENDÁRIO */}
       <div className="bg-gray-900 p-6 rounded-xl border border-gray-800 shadow-sm">
         <div className="grid grid-cols-7 gap-2 text-center mb-4">
           {diasSemana.map((d, i) => (
@@ -380,7 +388,6 @@ export default function History() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           
-          {/* DIV PRINCIPAL DO MODAL COM O REF PARA O CANVAS */}
           <div ref={modalRef} className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
             
             <div className="p-6 border-b border-gray-800 flex justify-between items-start">
@@ -403,59 +410,24 @@ export default function History() {
                 )}
               </div>
               
-              {/* ÁREA DE BOTÕES DO MODAL (Ignorados no Print) */}
               <div data-html2canvas-ignore="true" className="flex items-center gap-2">
-                
-                <button 
-                  onClick={handleCopyToWhatsApp}
-                  className="p-2 bg-gray-800 hover:bg-gray-700 text-emerald-500 rounded-md transition-colors border border-gray-700"
-                  title="Copiar Texto"
-                >
+                <button onClick={handleCopyToWhatsApp} className="p-2 bg-gray-800 hover:bg-gray-700 text-emerald-500 rounded-md transition-colors border border-gray-700" title="Copiar Texto">
                   <Copy className="w-4 h-4" />
                 </button>
-
-                {/* NOVO: Botão Markdown */}
-                <button 
-                  onClick={handleCopyMarkdown}
-                  className="p-2 bg-gray-800 hover:bg-gray-700 text-purple-400 rounded-md transition-colors border border-gray-700"
-                  title="Copiar Markdown"
-                >
+                <button onClick={handleCopyMarkdown} className="p-2 bg-gray-800 hover:bg-gray-700 text-purple-400 rounded-md transition-colors border border-gray-700" title="Copiar Markdown">
                   <FileCode2 className="w-4 h-4" />
                 </button>
-
-                {/* NOVO: Botão JSON */}
-                <button 
-                  onClick={handleDownloadJSON}
-                  className="p-2 bg-gray-800 hover:bg-gray-700 text-yellow-400 rounded-md transition-colors border border-gray-700"
-                  title="Baixar JSON"
-                >
+                <button onClick={handleDownloadJSON} className="p-2 bg-gray-800 hover:bg-gray-700 text-yellow-400 rounded-md transition-colors border border-gray-700" title="Baixar JSON">
                   <FileJson className="w-4 h-4" />
                 </button>
-
-                <button 
-                  onClick={handleDownloadImage}
-                  className="p-2 bg-gray-800 hover:bg-gray-700 text-blue-400 rounded-md transition-colors border border-gray-700"
-                  title="Baixar Imagem"
-                >
+                <button onClick={handleDownloadImage} className="p-2 bg-gray-800 hover:bg-gray-700 text-blue-400 rounded-md transition-colors border border-gray-700" title="Baixar Imagem">
                   <ImageIcon className="w-4 h-4" />
                 </button>
-
-                <button 
-                  onClick={handleDownloadPDF}
-                  className="p-2 bg-gray-800 hover:bg-gray-700 text-red-400 rounded-md transition-colors border border-gray-700"
-                  title="Baixar PDF"
-                >
+                <button onClick={handleDownloadPDF} className="p-2 bg-gray-800 hover:bg-gray-700 text-red-400 rounded-md transition-colors border border-gray-700" title="Baixar PDF">
                   <FileText className="w-4 h-4" />
                 </button>
-
-                {/* Separador visual antes do botão de fechar */}
                 <div className="w-px h-6 bg-gray-700 mx-1"></div>
-
-                <button 
-                  onClick={() => setIsModalOpen(false)}
-                  className="text-gray-400 hover:text-white transition-colors p-2 rounded-md hover:bg-gray-800"
-                  title="Fechar"
-                >
+                <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-white transition-colors p-2 rounded-md hover:bg-gray-800" title="Fechar">
                   <X className="w-6 h-6" />
                 </button>
               </div>
@@ -467,46 +439,70 @@ export default function History() {
                   Buscando dados do treino...
                 </div>
               ) : workoutDetails?.exercicios ? (
-                workoutDetails.exercicios.map((item: any, exIndex: number) => (
-                  <div key={exIndex} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
-                    <h3 className="text-base md:text-lg font-semibold text-white mb-1">
-                      {item.exercicios?.nome}
-                    </h3>
-                    <span className="text-xs px-2 py-1 bg-gray-800 text-gray-400 rounded-md mb-4 inline-block">
-                      {item.exercicios?.grupo_pai} | Foco: {item.exercicios?.musculo_primario}
-                    </span>
+                workoutDetails.exercicios.map((item: any, exIndex: number) => {
+                  
+                  // --- CHECAGEM SE É CARDIO ---
+                  const isCardio = item.exercicios?.grupo_pai?.trim().toLowerCase() === 'cardio';
 
-                    <div className="overflow-x-auto mt-2">
-                      <table className="w-full text-sm text-left whitespace-nowrap">
-                        <thead className="text-xs text-gray-400 border-b border-gray-700">
-                          <tr>
-                            <th className="pb-2 font-medium">Série</th>
-                            <th className="pb-2 font-medium">Carga</th>
-                            <th className="pb-2 font-medium">Repetições</th>
-                            <th className="pb-2 font-medium">Descanso</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-700/50">
-                          {item.cargas_kg.map((carga: number, serieIndex: number) => (
-                            <tr key={serieIndex} className="text-gray-300 hover:bg-gray-800/30 transition-colors">
-                              <td className="py-2 text-emerald-500 font-medium pl-2">{serieIndex + 1}</td>
-                              <td className="py-2">{carga} kg</td>
-                              <td className="py-2">{item.repeticoes[serieIndex]}</td>
-                              <td className="py-2">{formatTime(item.descansos_segundos[serieIndex])}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  return (
+                    <div key={exIndex} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+                      <h3 className="text-base md:text-lg font-semibold text-white mb-1">
+                        {item.exercicios?.nome}
+                      </h3>
+                      <span className="text-xs px-2 py-1 bg-gray-800 text-gray-400 rounded-md mb-4 inline-block">
+                        {item.exercicios?.grupo_pai} | Foco: {item.exercicios?.musculo_primario}
+                      </span>
+
+                      {/* --- RENDERIZAÇÃO CONDICIONAL --- */}
+                      {isCardio ? (
+                        <div className="grid grid-cols-2 gap-4 mt-2 mb-4">
+                          <div className="bg-gray-900/80 p-4 rounded-lg border border-gray-700/50 flex flex-col items-center justify-center">
+                            <span className="text-gray-400 text-[10px] uppercase tracking-widest font-bold mb-1 flex items-center gap-1"><Clock size={12}/> Tempo</span>
+                            <span className="text-xl font-bold text-emerald-500">
+                              {(item.tempo_real_minutos || item.tempoRealMinutos) ? `${item.tempo_real_minutos || item.tempoRealMinutos} min` : '-'}
+                            </span>
+                          </div>
+                          <div className="bg-gray-900/80 p-4 rounded-lg border border-gray-700/50 flex flex-col items-center justify-center">
+                            <span className="text-gray-400 text-[10px] uppercase tracking-widest font-bold mb-1 flex items-center gap-1"><Activity size={12}/> Distância</span>
+                            <span className="text-xl font-bold text-emerald-500">
+                              {(item.distancia_real_km || item.distanciaRealKm) ? `${item.distancia_real_km || item.distanciaRealKm} km` : '-'}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto mt-2">
+                          <table className="w-full text-sm text-left whitespace-nowrap">
+                            <thead className="text-xs text-gray-400 border-b border-gray-700">
+                              <tr>
+                                <th className="pb-2 font-medium">Série</th>
+                                <th className="pb-2 font-medium">Carga</th>
+                                <th className="pb-2 font-medium">Repetições</th>
+                                <th className="pb-2 font-medium">Descanso</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-700/50">
+                              {item.cargas_kg?.map((carga: number, serieIndex: number) => (
+                                <tr key={serieIndex} className="text-gray-300 hover:bg-gray-800/30 transition-colors">
+                                  <td className="py-2 text-emerald-500 font-medium pl-2">{serieIndex + 1}</td>
+                                  <td className="py-2">{carga} kg</td>
+                                  <td className="py-2">{item.repeticoes[serieIndex]}</td>
+                                  <td className="py-2">{formatTime(item.descansos_segundos[serieIndex])}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {item.observacoes && (
+                        <div className="mt-4 p-3 bg-gray-900/50 rounded text-sm text-gray-400 flex items-start gap-2 border border-gray-800">
+                          <MessageSquare className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />
+                          <p className="italic whitespace-pre-wrap">"{item.observacoes}"</p>
+                        </div>
+                      )}
                     </div>
-
-                    {item.observacoes && (
-                      <div className="mt-4 p-3 bg-gray-900/50 rounded text-sm text-gray-400 flex items-start gap-2 border border-gray-800">
-                        <MessageSquare className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />
-                        <p className="italic whitespace-pre-wrap">"{item.observacoes}"</p>
-                      </div>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <p className="text-gray-400 text-center py-10">Não foi possível carregar os detalhes.</p>
               )}
