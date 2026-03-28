@@ -348,26 +348,44 @@ export default function ActiveWorkout() {
         ? Number(manualDuration) * 60
         : tempoTotal;
 
-      const exerciciosProcessados = exercicios.map((ex) => {
-        
-        // Trata séries se for força
-        const seriesProcessadas = ex.seriesFeitas.map((serie) => {
-          if (isManualMode && serie.peso !== "" && serie.reps !== "") {
-            return { ...serie, concluido: true };
+      const exerciciosProcessados = exercicios
+        .map((ex) => {
+          // 1. Filtra apenas as séries que o usuário realmente preencheu carga e repetição
+          const seriesValidas = ex.seriesFeitas
+            .filter((serie) => serie.peso !== "" && serie.reps !== "")
+            .map((serie) => {
+              if (isManualMode) {
+                return { ...serie, concluido: true };
+              }
+              return serie;
+            });
+
+          return {
+            id: ex.id,
+            categoria: ex.categoria, // Informamos a categoria para o backend
+            seriesFeitas: seriesValidas, // Manda só as séries válidas (ou [] se for cardio)
+            observacoes: ex.observacoesUsuario,
+            tempoRealMinutos: ex.tempoRealMinutos ? Number(ex.tempoRealMinutos) : null,
+            distanciaRealKm: ex.distanciaRealKm ? Number(ex.distanciaRealKm) : null,
+          };
+        })
+        // 2. Remove os exercícios que o usuário deixou em branco (não fez nada)
+        .filter((ex) => {
+          const isCardio = ex.categoria === 'cardio';
+          // Se for cardio, tem que ter preenchido tempo, distância ou observação
+          if (isCardio) {
+            return ex.tempoRealMinutos || ex.distanciaRealKm || ex.observacoes;
           }
-          return serie;
+          // Se for força, tem que ter sobrado pelo menos uma série válida
+          return ex.seriesFeitas.length > 0;
         });
 
-        // Passamos os dados de força e de cardio para o backend
-        return {
-          id: ex.id,
-          categoria: ex.categoria, // Informamos a categoria para o backend
-          seriesFeitas: seriesProcessadas, // Vazio se for cardio
-          observacoes: ex.observacoesUsuario,
-          tempoRealMinutos: ex.tempoRealMinutos ? Number(ex.tempoRealMinutos) : null,
-          distanciaRealKm: ex.distanciaRealKm ? Number(ex.distanciaRealKm) : null,
-        };
-      });
+      // Se após o filtro não sobrou nenhum exercício (treino 100% em branco), bloqueia o envio
+      if (exerciciosProcessados.length === 0) {
+        toast.error("Preencha pelo menos uma série ou cardio para salvar.");
+        setSaving(false);
+        return;
+      }
 
       const payload = {
         diaTreinoId: id,

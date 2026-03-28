@@ -100,7 +100,7 @@ export const generateWorkout = async (req: AuthRequest, res: Response) => {
 
     // Adiciona diretriz de cardio dinamicamente
     const diretrizCardio = incluir_cardio 
-      ? `O aluno deseja INCLUIR exercícios da categoria CARDIO na periodização. Use sua expertise para distribuí-los adequadamente.`
+      ? `O aluno deseja INCLUIR exercícios da categoria CARDIO. Use sua expertise para distribuí-los adequadamente. Para os exercícios de cardio, você DEVE preencher os campos "tempo_meta_minutos" (ex: 20, 30) e "distancia_meta_km" (ex: 3.5, 5.0) com metas factíveis, e deixar "series", "repeticoes_min", "repeticoes_max" e "descanso_segundos" como null.`
       : `O aluno NÃO DESEJA cardio. Foque EXCLUSIVAMENTE em exercícios da categoria FORCA.`;
 
     const prompt = `

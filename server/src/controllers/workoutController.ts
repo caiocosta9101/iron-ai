@@ -3,9 +3,8 @@ import { Response } from 'express';
 import { supabase } from '../db';
 import { AuthRequest } from '../middlewares/authMiddleware';
 
-// === HELPER: Função para limpar e converter dados da IA para o Banco ===
 const parseRepeticoes = (repString: string | number | undefined) => {
-  if (!repString) return { min: 8, max: 12 }; // Fallback de segurança
+  if (!repString) return { min: 8, max: 12 };
   if (typeof repString === 'number') return { min: repString, max: repString };
   const nums = repString.toString().match(/\d+/g);
   if (!nums) return { min: 0, max: 0 };
@@ -14,28 +13,17 @@ const parseRepeticoes = (repString: string | number | undefined) => {
 };
 
 const parseDescanso = (descString: string | number | undefined) => {
-  if (!descString) return 60; // Fallback de segurança
+  if (!descString) return 60;
   if (typeof descString === 'number') return descString;
   const nums = descString.toString().match(/\d+/g);
   return nums ? parseInt(nums[0]) : 60; 
 };
 
-// ===================================================================
-
-// 1. CRIAR TREINO (Salva o JSON da IA ou Manual no Banco)
 export const createWorkout = async (req: AuthRequest, res: Response) => {
-  console.log('🔥 createWorkout chamado!');
-  
-  // 1. Desestruturamos todos os dados, incluindo o novo duracao_semanas vindo da IA
   const { nome, descricao, perfil, dias, gerado_por_ia, objetivo, data_inicio, data_fim, duracao_semanas } = req.body; 
-  
-  // O middleware já validou e nos entregou o ID aqui!
   const userId = req.userId; 
 
   try {
-    // =========================================================
-    // SALVAR / ATUALIZAR O PERFIL DO USUÁRIO (Apenas se vier da IA)
-    // =========================================================
     if (perfil && Object.keys(perfil).length > 0) {
       const { data: existingProfile } = await supabase
         .from('perfil_usuario')
@@ -65,29 +53,19 @@ export const createWorkout = async (req: AuthRequest, res: Response) => {
         await supabase.from('perfil_usuario').insert([perfilData]);
       }
     }
-    // =========================================================
 
     const objFinal = objetivo || (perfil ? perfil.objetivo : 'Geral');
     const isIA = gerado_por_ia !== undefined ? gerado_por_ia : true;
 
-    // =========================================================
-    // LÓGICA INTELIGENTE DE DATAS DA PERIODIZAÇÃO
-    // =========================================================
     let dataInicioFinal = data_inicio || new Date().toISOString().split('T')[0];
     let dataFimFinal = data_fim; 
 
-    // Se o treino não tiver data_fim (ex: veio da IA), mas tiver duracao_semanas, nós calculamos o fim!
     if (!dataFimFinal && duracao_semanas) {
-      // Cria um objeto de data baseado no início (cuidado com fuso horário, adicione 'T00:00:00' para precisão)
       const dataCalculo = new Date(`${dataInicioFinal}T00:00:00`);
-      // Soma os dias (Semanas x 7)
       dataCalculo.setDate(dataCalculo.getDate() + (duracao_semanas * 7));
-      // Transforma de volta em string no formato YYYY-MM-DD
       dataFimFinal = dataCalculo.toISOString().split('T')[0];
     }
-    // =========================================================
 
-    // Salva o Cabeçalho do Treino incluindo as datas finais
     const { data: treinoData, error: treinoError } = await supabase
       .from('treinos')
       .insert([{ 
@@ -134,7 +112,7 @@ export const createWorkout = async (req: AuthRequest, res: Response) => {
                 nome: exercicio.nome, 
                 grupo_pai: dia.foco || 'Geral',
                 musculo_primario: 'Geral',
-                equipamento_id: null // Fallback de segurança para exercícios avulsos
+                equipamento_id: null 
               }])
               .select()
               .single();
@@ -144,36 +122,45 @@ export const createWorkout = async (req: AuthRequest, res: Response) => {
           }
         }
 
-        const repMin = exercicio.repeticoes_min !== undefined ? exercicio.repeticoes_min : parseRepeticoes(exercicio.repeticoes).min;
-        const repMax = exercicio.repeticoes_max !== undefined ? exercicio.repeticoes_max : parseRepeticoes(exercicio.repeticoes).max;
-        const descanso = exercicio.descanso_segundos !== undefined ? exercicio.descanso_segundos : parseDescanso(exercicio.descanso);
+        const repMin = exercicio.repeticoes_min !== null && exercicio.repeticoes_min !== undefined ? exercicio.repeticoes_min : (exercicio.repeticoes ? parseRepeticoes(exercicio.repeticoes).min : null);
+        const repMax = exercicio.repeticoes_max !== null && exercicio.repeticoes_max !== undefined ? exercicio.repeticoes_max : (exercicio.repeticoes ? parseRepeticoes(exercicio.repeticoes).max : null);
+        const descanso = exercicio.descanso_segundos !== null && exercicio.descanso_segundos !== undefined ? exercicio.descanso_segundos : (exercicio.descanso ? parseDescanso(exercicio.descanso) : null);
+        const series = exercicio.series !== null && exercicio.series !== undefined ? parseInt(exercicio.series) : null;
+
+        const payloadExercicio = {
+          dia_treino_id: diaData.id, 
+          exercicio_id: exercicioId, 
+          ordem_execucao: i + 1, 
+          series: series, 
+          repeticoes_min: repMin, 
+          repeticoes_max: repMax, 
+          descanso_segundos: descanso, 
+          tempo_meta_minutos: exercicio.tempo_meta_minutos || null, 
+          distancia_meta_km: exercicio.distancia_meta_km || null, 
+          observacoes: exercicio.observacao || exercicio.observacoes || ""
+        };
+
+        console.log("🔥 TENTANDO INSERIR EXERCÍCIO:", payloadExercicio);
 
         const { error: ligacaoError } = await supabase
           .from('exercicios_treino')
-          .insert([{
-            dia_treino_id: diaData.id, 
-            exercicio_id: exercicioId, 
-            ordem_execucao: i + 1, 
-            series: parseInt(exercicio.series) || 3, 
-            repeticoes_min: repMin, 
-            repeticoes_max: repMax, 
-            descanso_segundos: descanso, 
-            observacoes: exercicio.observacao || exercicio.observacoes
-          }]);
+          .insert([payloadExercicio]);
 
-        if (ligacaoError) throw ligacaoError;
+        if (ligacaoError) {
+          console.error("❌ ERRO DO SUPABASE AO SALVAR EXERCÍCIO:", ligacaoError);
+          throw ligacaoError;
+        }
       }
     }
 
     return res.status(201).json({ message: 'Treino salvo com sucesso!', treinoId });
 
   } catch (error: any) {
-    console.error('Erro ao salvar treino:', JSON.stringify(error, null, 2));
-    return res.status(500).json({ error: 'Erro interno ao persistir dados.' });
+    console.error("❌ CATCH DISPARADO NO CONTROLLER:", error);
+    return res.status(500).json({ error: 'Erro interno ao persistir dados.', detalhes: error });
   }
 };
 
-// 2. LISTAR TREINOS
 export const getUserWorkouts = async (req: AuthRequest, res: Response) => {
     const userId = req.userId;
   
@@ -187,12 +174,10 @@ export const getUserWorkouts = async (req: AuthRequest, res: Response) => {
       if (error) throw error;
       return res.status(200).json(data);
     } catch (error: any) {
-      console.error('Erro ao buscar treinos:', error);
       return res.status(500).json({ error: 'Erro ao buscar dados.' });
     }
 };
 
-// 3. BUSCAR DETALHES DE UM TREINO ESPECÍFICO
 export const getWorkoutById = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const userId = req.userId;
@@ -205,8 +190,8 @@ export const getWorkoutById = async (req: AuthRequest, res: Response) => {
         dias_treino (
           id, nome, ordem_dia, observacoes, foco,
           exercicios_treino (
-            id, series, repeticoes_min, repeticoes_max, descanso_segundos, observacoes, ordem_execucao,
-            exercicios ( nome, equipamentos ( nome ) )
+            id, series, repeticoes_min, repeticoes_max, descanso_segundos, tempo_meta_minutos, distancia_meta_km, observacoes, ordem_execucao,
+            exercicios ( nome, categoria, equipamentos ( nome ) )
           )
         )
       `)
@@ -238,11 +223,14 @@ export const getWorkoutById = async (req: AuthRequest, res: Response) => {
             .map((ex: any) => ({
               id: ex.id,
               nome: ex.exercicios.nome, 
+              categoria: ex.exercicios.categoria,
               equipamento: ex.exercicios?.equipamentos?.nome || 'Peso do Corpo',
               series: ex.series,
               repeticoes_min: ex.repeticoes_min,
               repeticoes_max: ex.repeticoes_max,
               descanso_segundos: ex.descanso_segundos,
+              tempo_meta_minutos: ex.tempo_meta_minutos,
+              distancia_meta_km: ex.distancia_meta_km,
               observacoes: ex.observacoes
             }))
         }))
@@ -251,12 +239,10 @@ export const getWorkoutById = async (req: AuthRequest, res: Response) => {
     return res.status(200).json(treinoFormatado);
 
   } catch (error: any) {
-    console.error('Erro ao buscar detalhes do treino:', error);
     return res.status(500).json({ error: 'Erro ao buscar detalhes.' });
   }
 };
 
-// 4. ATUALIZAR INFORMAÇÕES DO TREINO (Nome, Descrição, Objetivo)
 export const updateWorkout = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const { nome, descricao, objetivo } = req.body;
@@ -267,19 +253,17 @@ export const updateWorkout = async (req: AuthRequest, res: Response) => {
       .from('treinos')
       .update({ nome, descricao, objetivo })
       .eq('id', id)
-      .eq('usuario_id', userId) // Segurança: só atualiza se for o dono
+      .eq('usuario_id', userId)
       .select()
       .single();
 
     if (error) throw error;
     return res.status(200).json({ message: 'Treino atualizado com sucesso', data });
   } catch (error: any) {
-    console.error('Erro ao atualizar treino:', error);
     return res.status(500).json({ error: 'Erro ao atualizar dados.' });
   }
 };
 
-// 5. DELETAR TREINO INTEIRO (E cascata)
 export const deleteWorkout = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const userId = req.userId;
@@ -289,24 +273,36 @@ export const deleteWorkout = async (req: AuthRequest, res: Response) => {
       .from('treinos')
       .delete()
       .eq('id', id)
-      .eq('usuario_id', userId); // Segurança: só apaga se for o dono
+      .eq('usuario_id', userId); 
 
     if (error) throw error;
     return res.status(200).json({ message: 'Treino deletado com sucesso' });
   } catch (error: any) {
-    console.error('Erro ao deletar treino:', error);
     return res.status(500).json({ error: 'Erro ao deletar treino.' });
   }
 };
 
-// 6. ATUALIZAR EXERCÍCIO ESPECÍFICO (Séries, Reps, Descanso e Substituição)
 export const updateExercise = async (req: AuthRequest, res: Response) => {
   const { id } = req.params; 
-  const { series, repeticoes_min, repeticoes_max, descanso_segundos, exercicio_id } = req.body;
-  const userId = req.userId; // Pegando o ID do usuário autenticado
+  let { series, repeticoes_min, repeticoes_max, descanso_segundos, tempo_meta_minutos, distancia_meta_km, exercicio_id } = req.body;
+  const userId = req.userId; 
 
   try {
-    // 1. VALIDAÇÃO DE POSSE (Anti-IDOR)
+    // --- BLINDAGEM DE DADOS (NOVA REGRA) ---
+    // Se veio tempo ou distância, é cardio. Forçamos a limpeza dos dados de força.
+    const isCardio = (tempo_meta_minutos && tempo_meta_minutos > 0) || (distancia_meta_km && distancia_meta_km > 0);
+
+    if (isCardio) {
+      series = null;
+      repeticoes_min = null;
+      repeticoes_max = null;
+      descanso_segundos = null;
+    } else {
+      tempo_meta_minutos = null;
+      distancia_meta_km = null;
+    }
+    // ---------------------------------------
+
     const { data: authCheck, error: authError } = await supabase
       .from('exercicios_treino')
       .select(`
@@ -324,17 +320,15 @@ export const updateExercise = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Exercício não encontrado.' });
     }
 
-    // Navega pelas relações para checar o dono
     const donoId = (authCheck as any)?.dias_treino?.treinos?.usuario_id;
     
     if (donoId !== userId) {
       return res.status(403).json({ error: 'Acesso negado. Você não tem permissão para alterar este exercício.' });
     }
 
-    // 2. UPDATE SEGURO
     const { data, error } = await supabase
       .from('exercicios_treino')
-      .update({ series, repeticoes_min, repeticoes_max, descanso_segundos, exercicio_id })
+      .update({ series, repeticoes_min, repeticoes_max, descanso_segundos, tempo_meta_minutos, distancia_meta_km, exercicio_id })
       .eq('id', id)
       .select()
       .single();
@@ -342,18 +336,15 @@ export const updateExercise = async (req: AuthRequest, res: Response) => {
     if (error) throw error;
     return res.status(200).json({ message: 'Exercício atualizado com sucesso', data });
   } catch (error: any) {
-    console.error('Erro ao atualizar exercício:', error);
-    return res.status(500).json({ error: 'Erro interno ao atualizar exercício.' }); // Mensagem genérica
+    return res.status(500).json({ error: 'Erro interno ao atualizar exercício.' });
   }
 };
 
-// 7. REMOVER EXERCÍCIO ESPECÍFICO DE UM DIA
 export const removeExercise = async (req: AuthRequest, res: Response) => {
   const { id } = req.params; 
-  const userId = req.userId; // Pegando o ID do usuário autenticado
+  const userId = req.userId; 
 
   try {
-    // 1. VALIDAÇÃO DE POSSE (Anti-IDOR)
     const { data: authCheck, error: authError } = await supabase
       .from('exercicios_treino')
       .select(`
@@ -377,7 +368,6 @@ export const removeExercise = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ error: 'Acesso negado. Você não tem permissão para remover este exercício.' });
     }
 
-    // 2. DELETE SEGURO
     const { error } = await supabase
       .from('exercicios_treino')
       .delete()
@@ -386,17 +376,14 @@ export const removeExercise = async (req: AuthRequest, res: Response) => {
     if (error) throw error;
     return res.status(200).json({ message: 'Exercício removido com sucesso' });
   } catch (error: any) {
-    console.error('Erro ao remover exercício:', error);
-    return res.status(500).json({ error: 'Erro interno ao remover exercício.' }); // Mensagem genérica
+    return res.status(500).json({ error: 'Erro interno ao remover exercício.' });
   }
 };
 
-// 8. NOVO: BUSCAR DETALHES DE UM "DIA DE TREINO" ESPECÍFICO (Para o modo ACTIVE)
 export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params; // ID do 'dias_treino'
+    const { id } = req.params;
 
-    // Buscamos o Dia + Os Exercícios configurados para ele + Detalhes do exercício (nome)
     const { data: dayDetails, error } = await supabase
       .from('dias_treino')
       .select(`
@@ -410,11 +397,14 @@ export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
           repeticoes_min,
           repeticoes_max,
           descanso_segundos,
+          tempo_meta_minutos,
+          distancia_meta_km,
           observacoes,
           ordem_execucao,
           exercicios (
             id,
             nome,
+            categoria,
             grupo_pai,
             musculo_primario,
             equipamentos (
@@ -430,7 +420,6 @@ export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Dia de treino não encontrado' });
     }
 
-    // Ordenamos os exercícios pela ordem de execução correta
     const sortedExercises = dayDetails.exercicios_treino.sort((a: any, b: any) => 
       a.ordem_execucao - b.ordem_execucao
     );
@@ -441,19 +430,16 @@ export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
     });
 
   } catch (error) {
-    console.error('Erro ao buscar detalhes do dia:', error);
     return res.status(500).json({ error: 'Erro interno' });
   }
 };
 
-// 9. ADICIONAR NOVO DIA DE TREINO
 export const addDayToWorkout = async (req: AuthRequest, res: Response) => {
-  const { id } = req.params; // ID do treino
+  const { id } = req.params; 
   const { nome, foco } = req.body;
   const userId = req.userId;
 
   try {
-    // Validação de posse
     const { data: treino } = await supabase
       .from('treinos')
       .select('id')
@@ -463,7 +449,6 @@ export const addDayToWorkout = async (req: AuthRequest, res: Response) => {
 
     if (!treino) return res.status(403).json({ error: 'Acesso negado.' });
 
-    // Pega a maior ordem_dia atual
     const { data: maxDia } = await supabase
       .from('dias_treino')
       .select('ordem_dia')
@@ -482,21 +467,31 @@ export const addDayToWorkout = async (req: AuthRequest, res: Response) => {
 
     if (error) throw error;
 
-    // Retorna formatado para o frontend anexar no estado
     return res.status(201).json({ ...novoDia, exercicios: [] });
   } catch (error: any) {
-    console.error('Erro ao adicionar dia:', error);
     return res.status(500).json({ error: 'Erro interno ao adicionar dia.' });
   }
 };
 
-// 10. ADICIONAR NOVO EXERCÍCIO A UM DIA
 export const addExerciseToDay = async (req: AuthRequest, res: Response) => {
-  const { id } = req.params; // ID do dia_treino
-  const { exercicio_id, series, repeticoes_min, repeticoes_max, descanso_segundos } = req.body;
+  const { id } = req.params; 
+  let { exercicio_id, series, repeticoes_min, repeticoes_max, descanso_segundos, tempo_meta_minutos, distancia_meta_km, observacoes } = req.body;
   
   try {
-    // Pega a maior ordem_execucao
+    // --- BLINDAGEM DE DADOS (NOVA REGRA) ---
+    const isCardio = (tempo_meta_minutos && tempo_meta_minutos > 0) || (distancia_meta_km && distancia_meta_km > 0);
+
+    if (isCardio) {
+      series = null;
+      repeticoes_min = null;
+      repeticoes_max = null;
+      descanso_segundos = null;
+    } else {
+      tempo_meta_minutos = null;
+      distancia_meta_km = null;
+    }
+    // ---------------------------------------
+
     const { data: maxEx } = await supabase
       .from('exercicios_treino')
       .select('ordem_execucao')
@@ -516,41 +511,44 @@ export const addExerciseToDay = async (req: AuthRequest, res: Response) => {
         series, 
         repeticoes_min, 
         repeticoes_max, 
-        descanso_segundos 
+        descanso_segundos,
+        tempo_meta_minutos,
+        distancia_meta_km,
+        observacoes: observacoes || ""
       }])
       .select(`
-        id, series, repeticoes_min, repeticoes_max, descanso_segundos, observacoes, ordem_execucao,
-        exercicios ( nome, equipamentos ( nome ) )
+        id, series, repeticoes_min, repeticoes_max, descanso_segundos, tempo_meta_minutos, distancia_meta_km, observacoes, ordem_execucao,
+        exercicios ( nome, categoria, equipamentos ( nome ) )
       `)
       .single();
 
     if (error) throw error;
 
-    // Formata o retorno para dar o push direto no estado do React
     const formatado = {
       id: novaRelacao.id,
       nome: (novaRelacao.exercicios as any).nome,
+      categoria: (novaRelacao.exercicios as any).categoria,
       equipamento: (novaRelacao.exercicios as any)?.equipamentos?.nome || 'Peso do Corpo',
       series: novaRelacao.series,
       repeticoes_min: novaRelacao.repeticoes_min,
       repeticoes_max: novaRelacao.repeticoes_max,
       descanso_segundos: novaRelacao.descanso_segundos,
+      tempo_meta_minutos: novaRelacao.tempo_meta_minutos,
+      distancia_meta_km: novaRelacao.distancia_meta_km,
       observacoes: novaRelacao.observacoes
     };
 
     return res.status(201).json(formatado);
   } catch (error: any) {
-    console.error('Erro ao adicionar exercício:', error);
     return res.status(500).json({ error: 'Erro interno ao adicionar exercício.' });
   }
 };
-// 11. DELETAR UM DIA DE TREINO ESPECÍFICO
+
 export const deleteWorkoutDay = async (req: AuthRequest, res: Response) => {
-  const { id } = req.params; // ID do dias_treino
+  const { id } = req.params; 
   const userId = req.userId;
 
   try {
-    // 1. Validação de posse (Anti-IDOR)
     const { data: authCheck, error: authError } = await supabase
       .from('dias_treino')
       .select(`
@@ -570,7 +568,6 @@ export const deleteWorkoutDay = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ error: 'Acesso negado. Você não tem permissão para remover este dia.' });
     }
 
-    // 2. Deleta o dia (a deleção em cascata do banco apaga os exercicios_treino)
     const { error } = await supabase
       .from('dias_treino')
       .delete()
@@ -579,7 +576,6 @@ export const deleteWorkoutDay = async (req: AuthRequest, res: Response) => {
     if (error) throw error;
     return res.status(200).json({ message: 'Dia de treino removido com sucesso' });
   } catch (error: any) {
-    console.error('Erro ao remover dia de treino:', error);
     return res.status(500).json({ error: 'Erro interno ao remover dia de treino.' });
   }
 };

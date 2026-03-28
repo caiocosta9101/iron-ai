@@ -19,6 +19,7 @@ interface Exercise {
   grupo_pai: string;
   musculo_primario: string;
   equipamentos?: Equipamento; 
+  categoria: string;
 }
 
 export default function NewWorkout() {
@@ -68,11 +69,14 @@ export default function NewWorkout() {
     newDias[dayIndex].exercicios.push({
       exercicio_id: exercise.id,
       nome: exercise.nome,
+      categoria: exercise.categoria, // Salva a categoria para a renderização condicional
       equipamento: exercise.equipamentos?.nome || 'Peso do Corpo',
-      series: 3,
-      repeticoes_min: 8,
-      repeticoes_max: 12,
-      descanso_segundos: 60 
+      series: exercise.categoria === 'cardio' ? null : 3,
+      repeticoes_min: exercise.categoria === 'cardio' ? null : 8,
+      repeticoes_max: exercise.categoria === 'cardio' ? null : 12,
+      descanso_segundos: exercise.categoria === 'cardio' ? null : 60,
+      tempo_meta_minutos: exercise.categoria === 'cardio' ? 15 : null, // Valor inicial para cardio
+      distancia_meta_km: exercise.categoria === 'cardio' ? 5 : null    // Valor inicial para cardio
     });
     setManualWorkout({ ...manualWorkout, dias: newDias });
     setSearch('');
@@ -259,57 +263,92 @@ export default function NewWorkout() {
               </div>
             </div>
 
-            {/* LISTAGEM DE EXERCÍCIOS COM INPUT DE DESCANSO */}
+            {/* LISTAGEM DE EXERCÍCIOS COM INPUT DE DESCANSO E RENDERIZAÇÃO CONDICIONAL */}
             <div className="space-y-4 mb-6">
               {dia.exercicios.map((ex, eIdx) => (
                 <div key={eIdx} className="flex flex-col lg:flex-row lg:items-center gap-4 bg-[#112218] p-4 rounded-2xl border border-[#326747]/50 hover:border-[#326747] transition-colors">
                    <span className="text-white font-bold flex-1 text-lg">{ex.nome}</span>
                    
                    <div className="flex flex-wrap items-center gap-4">
-                     {/* Séries */}
-                     <div className="flex items-center gap-2">
-                       <span className="text-xs text-[#92c9a8] uppercase font-bold">Séries</span>
-                       <input 
-                         type="number" 
-                         className="w-14 bg-[#193324] border border-[#326747] rounded-lg p-2 text-center text-white outline-none focus:border-[#13ec6a] font-bold" 
-                         value={ex.series} 
-                         onChange={(e) => updateExerciseField(dIdx, eIdx, 'series', Number(e.target.value))}
-                       />
-                     </div>
+                     {ex.categoria === 'cardio' ? (
+                       <>
+                         {/* Tempo */}
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Tempo</span>
+                           <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
+                             <input 
+                               type="number" 
+                               className="w-14 bg-transparent text-center text-white outline-none font-bold" 
+                               value={ex.tempo_meta_minutos || ''} 
+                               onChange={(e) => updateExerciseField(dIdx, eIdx, 'tempo_meta_minutos', Number(e.target.value))}
+                             />
+                             <span className="text-[#326747] text-xs font-bold pr-2">min</span>
+                           </div>
+                         </div>
 
-                     {/* Reps */}
-                     <div className="flex items-center gap-2">
-                       <span className="text-xs text-[#92c9a8] uppercase font-bold">Reps</span>
-                       <div className="flex items-center gap-1 bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
-                         <input 
-                           type="number" 
-                           className="w-10 bg-transparent text-center text-white outline-none font-bold" 
-                           value={ex.repeticoes_min} 
-                           onChange={(e) => updateExerciseField(dIdx, eIdx, 'repeticoes_min', Number(e.target.value))}
-                         />
-                         <span className="text-[#326747]">-</span>
-                         <input 
-                           type="number" 
-                           className="w-10 bg-transparent text-center text-white outline-none font-bold" 
-                           value={ex.repeticoes_max} 
-                           onChange={(e) => updateExerciseField(dIdx, eIdx, 'repeticoes_max', Number(e.target.value))}
-                         />
-                       </div>
-                     </div>
+                         {/* Distância */}
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Distância</span>
+                           <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
+                             <input 
+                               type="number" 
+                               step="0.1"
+                               className="w-14 bg-transparent text-center text-white outline-none font-bold" 
+                               value={ex.distancia_meta_km || ''} 
+                               onChange={(e) => updateExerciseField(dIdx, eIdx, 'distancia_meta_km', Number(e.target.value))}
+                             />
+                             <span className="text-[#326747] text-xs font-bold pr-2">km</span>
+                           </div>
+                         </div>
+                       </>
+                     ) : (
+                       <>
+                         {/* Séries */}
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Séries</span>
+                           <input 
+                             type="number" 
+                             className="w-14 bg-[#193324] border border-[#326747] rounded-lg p-2 text-center text-white outline-none focus:border-[#13ec6a] font-bold" 
+                             value={ex.series || ''} 
+                             onChange={(e) => updateExerciseField(dIdx, eIdx, 'series', Number(e.target.value))}
+                           />
+                         </div>
 
-                     {/* Descanso */}
-                     <div className="flex items-center gap-2">
-                       <span className="text-xs text-[#92c9a8] uppercase font-bold">Rest</span>
-                       <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
-                         <input 
-                           type="number" 
-                           className="w-12 bg-transparent text-center text-white outline-none font-bold" 
-                           value={ex.descanso_segundos} 
-                           onChange={(e) => updateExerciseField(dIdx, eIdx, 'descanso_segundos', Number(e.target.value))}
-                         />
-                         <span className="text-[#326747] text-xs font-bold pr-2">s</span>
-                       </div>
-                     </div>
+                         {/* Reps */}
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Reps</span>
+                           <div className="flex items-center gap-1 bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
+                             <input 
+                               type="number" 
+                               className="w-10 bg-transparent text-center text-white outline-none font-bold" 
+                               value={ex.repeticoes_min || ''} 
+                               onChange={(e) => updateExerciseField(dIdx, eIdx, 'repeticoes_min', Number(e.target.value))}
+                             />
+                             <span className="text-[#326747]">-</span>
+                             <input 
+                               type="number" 
+                               className="w-10 bg-transparent text-center text-white outline-none font-bold" 
+                               value={ex.repeticoes_max || ''} 
+                               onChange={(e) => updateExerciseField(dIdx, eIdx, 'repeticoes_max', Number(e.target.value))}
+                             />
+                           </div>
+                         </div>
+
+                         {/* Descanso */}
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Rest</span>
+                           <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
+                             <input 
+                               type="number" 
+                               className="w-12 bg-transparent text-center text-white outline-none font-bold" 
+                               value={ex.descanso_segundos || ''} 
+                               onChange={(e) => updateExerciseField(dIdx, eIdx, 'descanso_segundos', Number(e.target.value))}
+                             />
+                             <span className="text-[#326747] text-xs font-bold pr-2">s</span>
+                           </div>
+                         </div>
+                       </>
+                     )}
 
                      {/* Excluir */}
                      <button 
