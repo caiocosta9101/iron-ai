@@ -66,24 +66,49 @@ export default function NewWorkout() {
 
   const addExerciseToDay = (dayIndex: number, exercise: Exercise) => {
     const newDias = [...manualWorkout.dias];
+    
+    // Identifica o tipo do exercício para criar os valores default corretos
+    const categoriaSegura = exercise.categoria?.toLowerCase() || '';
+    const isCardio = exercise.categoria === 'cardio';
+    const isIso = exercise.categoria === 'isometrico';
+    const isHiit = exercise.categoria === 'hiit';
+    const isForca = !isCardio && !isIso && !isHiit; // Default para força
+
     newDias[dayIndex].exercicios.push({
       exercicio_id: exercise.id,
       nome: exercise.nome,
-      categoria: exercise.categoria, // Salva a categoria para a renderização condicional
+      categoria: exercise.categoria, 
       equipamento: exercise.equipamentos?.nome || 'Peso do Corpo',
-      series: exercise.categoria === 'cardio' ? null : 3,
-      repeticoes_min: exercise.categoria === 'cardio' ? null : 8,
-      repeticoes_max: exercise.categoria === 'cardio' ? null : 12,
-      descanso_segundos: exercise.categoria === 'cardio' ? null : 60,
-      tempo_meta_minutos: exercise.categoria === 'cardio' ? 15 : null, // Valor inicial para cardio
-      distancia_meta_km: exercise.categoria === 'cardio' ? 5 : null    // Valor inicial para cardio
+      tipo: categoriaSegura || 'forca', 
+      
+      // Campos de Força
+      series: (isForca || isIso) ? 3 : null,
+      repeticoes_min: isForca ? 8 : null,
+      repeticoes_max: isForca ? 12 : null,
+      
+      // Descanso (comum a força e isométrico)
+      descanso_segundos: (isForca || isIso) ? 60 : null,
+      
+      // Campos de Cardio (LIMPO E MAGRO)
+      tempo_meta_minutos: isCardio ? 15 : null, 
+      distancia_meta_km: isCardio ? 5 : null,
+
+      // Campos Exclusivos de Isometria
+      tempo_segundos: isIso ? 30 : null,
+
+      // Campos Exclusivos de HIIT (LIMPO E MAGRO)
+      rounds: isHiit ? 8 : null,
+      tempos_estimulo_segundos: isHiit ? [20] : [], 
+      tempos_descanso_segundos: isHiit ? [10] : []
     });
+    
     setManualWorkout({ ...manualWorkout, dias: newDias });
     setSearch('');
     toast.success(`${exercise.nome} adicionado ao ${newDias[dayIndex].nome}`);
   };
 
-  const updateExerciseField = (dayIndex: number, exerciseIndex: number, field: string, value: number) => {
+  // Aceita any no value para podermos passar arrays no caso do HIIT
+  const updateExerciseField = (dayIndex: number, exerciseIndex: number, field: string, value: any) => {
     const newDias = [...manualWorkout.dias];
     newDias[dayIndex].exercicios[exerciseIndex][field] = value;
     setManualWorkout({ ...manualWorkout, dias: newDias });
@@ -263,94 +288,108 @@ export default function NewWorkout() {
               </div>
             </div>
 
-            {/* LISTAGEM DE EXERCÍCIOS COM INPUT DE DESCANSO E RENDERIZAÇÃO CONDICIONAL */}
+            {/* LISTAGEM DE EXERCÍCIOS COM RENDERIZAÇÃO CONDICIONAL */}
             <div className="space-y-4 mb-6">
               {dia.exercicios.map((ex, eIdx) => (
                 <div key={eIdx} className="flex flex-col lg:flex-row lg:items-center gap-4 bg-[#112218] p-4 rounded-2xl border border-[#326747]/50 hover:border-[#326747] transition-colors">
                    <span className="text-white font-bold flex-1 text-lg">{ex.nome}</span>
                    
                    <div className="flex flex-wrap items-center gap-4">
-                     {ex.categoria === 'cardio' ? (
+                     
+                     {/* RENDERIZAÇÃO PARA CARDIO */}
+                     {ex.categoria === 'cardio' && (
                        <>
-                         {/* Tempo */}
                          <div className="flex items-center gap-2">
                            <span className="text-xs text-[#92c9a8] uppercase font-bold">Tempo</span>
                            <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
-                             <input 
-                               type="number" 
-                               className="w-14 bg-transparent text-center text-white outline-none font-bold" 
-                               value={ex.tempo_meta_minutos || ''} 
-                               onChange={(e) => updateExerciseField(dIdx, eIdx, 'tempo_meta_minutos', Number(e.target.value))}
-                             />
+                             <input type="number" className="w-14 bg-transparent text-center text-white outline-none font-bold" value={ex.tempo_meta_minutos || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'tempo_meta_minutos', Number(e.target.value))} />
                              <span className="text-[#326747] text-xs font-bold pr-2">min</span>
                            </div>
                          </div>
-
-                         {/* Distância */}
                          <div className="flex items-center gap-2">
-                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Distância</span>
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Dist</span>
                            <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
-                             <input 
-                               type="number" 
-                               step="0.1"
-                               className="w-14 bg-transparent text-center text-white outline-none font-bold" 
-                               value={ex.distancia_meta_km || ''} 
-                               onChange={(e) => updateExerciseField(dIdx, eIdx, 'distancia_meta_km', Number(e.target.value))}
-                             />
+                             <input type="number" step="0.1" className="w-14 bg-transparent text-center text-white outline-none font-bold" value={ex.distancia_meta_km || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'distancia_meta_km', Number(e.target.value))} />
                              <span className="text-[#326747] text-xs font-bold pr-2">km</span>
                            </div>
                          </div>
                        </>
-                     ) : (
+                     )}
+
+                     {/* RENDERIZAÇÃO PARA ISOMÉTRICO */}
+                     {ex.categoria === 'isometrico' && (
                        <>
-                         {/* Séries */}
                          <div className="flex items-center gap-2">
                            <span className="text-xs text-[#92c9a8] uppercase font-bold">Séries</span>
-                           <input 
-                             type="number" 
-                             className="w-14 bg-[#193324] border border-[#326747] rounded-lg p-2 text-center text-white outline-none focus:border-[#13ec6a] font-bold" 
-                             value={ex.series || ''} 
-                             onChange={(e) => updateExerciseField(dIdx, eIdx, 'series', Number(e.target.value))}
-                           />
+                           <input type="number" className="w-14 bg-[#193324] border border-[#326747] rounded-lg p-2 text-center text-white outline-none focus:border-[#13ec6a] font-bold" value={ex.series || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'series', Number(e.target.value))} />
                          </div>
-
-                         {/* Reps */}
                          <div className="flex items-center gap-2">
-                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Reps</span>
-                           <div className="flex items-center gap-1 bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
-                             <input 
-                               type="number" 
-                               className="w-10 bg-transparent text-center text-white outline-none font-bold" 
-                               value={ex.repeticoes_min || ''} 
-                               onChange={(e) => updateExerciseField(dIdx, eIdx, 'repeticoes_min', Number(e.target.value))}
-                             />
-                             <span className="text-[#326747]">-</span>
-                             <input 
-                               type="number" 
-                               className="w-10 bg-transparent text-center text-white outline-none font-bold" 
-                               value={ex.repeticoes_max || ''} 
-                               onChange={(e) => updateExerciseField(dIdx, eIdx, 'repeticoes_max', Number(e.target.value))}
-                             />
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Duração</span>
+                           <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
+                             <input type="number" className="w-14 bg-transparent text-center text-white outline-none font-bold" value={ex.tempo_segundos || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'tempo_segundos', Number(e.target.value))} />
+                             <span className="text-[#326747] text-xs font-bold pr-2">seg</span>
                            </div>
                          </div>
-
-                         {/* Descanso */}
                          <div className="flex items-center gap-2">
                            <span className="text-xs text-[#92c9a8] uppercase font-bold">Rest</span>
                            <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
-                             <input 
-                               type="number" 
-                               className="w-12 bg-transparent text-center text-white outline-none font-bold" 
-                               value={ex.descanso_segundos || ''} 
-                               onChange={(e) => updateExerciseField(dIdx, eIdx, 'descanso_segundos', Number(e.target.value))}
-                             />
+                             <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={ex.descanso_segundos || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'descanso_segundos', Number(e.target.value))} />
                              <span className="text-[#326747] text-xs font-bold pr-2">s</span>
                            </div>
                          </div>
                        </>
                      )}
 
-                     {/* Excluir */}
+                     {/* RENDERIZAÇÃO PARA HIIT */}
+                     {ex.categoria === 'hiit' && (
+                       <>
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Rounds</span>
+                           <input type="number" className="w-14 bg-[#193324] border border-[#326747] rounded-lg p-2 text-center text-white outline-none focus:border-[#13ec6a] font-bold" value={ex.rounds || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'rounds', Number(e.target.value))} />
+                         </div>
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Estímulo</span>
+                           <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
+                             <input type="number" className="w-14 bg-transparent text-center text-white outline-none font-bold text-red-400" value={ex.tempos_estimulo_segundos?.[0] || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'tempos_estimulo_segundos', [Number(e.target.value)])} />
+                             <span className="text-[#326747] text-xs font-bold pr-2">s</span>
+                           </div>
+                         </div>
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Descanso</span>
+                           <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
+                             <input type="number" className="w-14 bg-transparent text-center text-white outline-none font-bold text-blue-400" value={ex.tempos_descanso_segundos?.[0] || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'tempos_descanso_segundos', [Number(e.target.value)])} />
+                             <span className="text-[#326747] text-xs font-bold pr-2">s</span>
+                           </div>
+                         </div>
+                       </>
+                     )}
+
+                     {/* RENDERIZAÇÃO PARA FORÇA (PADRÃO) */}
+                     {(ex.categoria === 'forca' || (!ex.categoria) || (!['cardio', 'isometrico', 'hiit'].includes(ex.categoria))) && (
+                       <>
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Séries</span>
+                           <input type="number" className="w-14 bg-[#193324] border border-[#326747] rounded-lg p-2 text-center text-white outline-none focus:border-[#13ec6a] font-bold" value={ex.series || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'series', Number(e.target.value))} />
+                         </div>
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Reps</span>
+                           <div className="flex items-center gap-1 bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
+                             <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={ex.repeticoes_min || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'repeticoes_min', Number(e.target.value))} />
+                             <span className="text-[#326747]">-</span>
+                             <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={ex.repeticoes_max || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'repeticoes_max', Number(e.target.value))} />
+                           </div>
+                         </div>
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs text-[#92c9a8] uppercase font-bold">Rest</span>
+                           <div className="flex items-center bg-[#193324] border border-[#326747] rounded-lg p-1 focus-within:border-[#13ec6a] transition-colors">
+                             <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={ex.descanso_segundos || ''} onChange={(e) => updateExerciseField(dIdx, eIdx, 'descanso_segundos', Number(e.target.value))} />
+                             <span className="text-[#326747] text-xs font-bold pr-2">s</span>
+                           </div>
+                         </div>
+                       </>
+                     )}
+
+                     {/* Excluir (Mantido igual para todos) */}
                      <button 
                        onClick={() => removeExercise(dIdx, eIdx)}
                        className="text-red-400 hover:bg-red-500 hover:text-white p-2 rounded-lg transition-colors bg-red-400/10 hover:shadow-[0_0_15px_rgba(248,113,113,0.5)]"

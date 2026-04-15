@@ -8,7 +8,7 @@ import { ptBR } from 'date-fns/locale';
 import { 
   X, Clock, Dumbbell, Calendar, MessageSquare, 
   ChevronLeft, ChevronRight, Copy, Image as ImageIcon, FileText, 
-  FileJson, FileCode2, Activity // Importamos a Activity pro Cardio
+  FileJson, FileCode2, Activity, Zap, Timer
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../services/api';
@@ -59,6 +59,7 @@ export default function History() {
   };
 
   const formatTime = (seconds: number) => {
+    if (!seconds) return '0s';
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
@@ -78,21 +79,46 @@ export default function History() {
     texto += `⏱️ Duração: ${duracao} min\n\n`;
 
     workoutDetails.exercicios.forEach((item: any) => {
-      texto += `🔸 *${item.exercicios?.nome}*\n`;
+      const nomeExercicio = item.nome || item.exercicios?.nome || 'Exercício Desconhecido';
+      texto += `🔸 *${nomeExercicio}*\n`;
       
-      const isCardio = item.exercicios?.grupo_pai?.trim().toLowerCase() === 'cardio';
-      
-      if (isCardio) {
+      const categoria = item.categoria || item.tipo;
+      const grupoPai = item.grupo_pai || item.exercicios?.grupo_pai || '';
+      const isCardioLegacy = grupoPai.trim().toLowerCase() === 'cardio' && categoria !== 'hiit';
+
+      if (categoria === 'hiit') {
+        let totalSeg = 0, totalDist = 0;
+        item.velocidades_estimulo_real?.forEach((vel: number, idx: number) => {
+           const tOn = item.tempos_estimulo_real?.[idx] || 0;
+           const tOff = item.tempos_descanso_real?.[idx] || 0;
+           const vOff = item.velocidades_descanso_real?.[idx] || 0;
+           totalSeg += (tOn + tOff);
+           totalDist += (tOn / 3600) * vel + (tOff / 3600) * vOff;
+        });
+        const mins = Math.round(totalSeg / 60);
+        const km = Number(totalDist.toFixed(2));
+        
+        texto += `  ⏱️ Total: ${mins} min | 🏃 Distância: ${km} km\n`;
+        item.velocidades_estimulo_real?.forEach((vel: number, idx: number) => {
+           texto += `  Round ${idx + 1}: ${vel}km/h (${item.tempos_estimulo_real?.[idx]}s) ⚡ / ${item.velocidades_descanso_real?.[idx]}km/h (${item.tempos_descanso_real?.[idx]}s) 🚶\n`;
+        });
+      } else if (categoria === 'isometrico') {
+        item.tempos_reais_segundos?.forEach((tempo: number, idx: number) => {
+           texto += `  Série ${idx + 1}: ${tempo}s ⏱️\n`;
+        });
+      } else if (categoria === 'cardio' || isCardioLegacy) {
         const tempo = item.tempo_real_minutos || item.tempoRealMinutos;
         const dist = item.distancia_real_km || item.distanciaRealKm;
         if (tempo) texto += `  ⏱️ Tempo: ${tempo} min\n`;
         if (dist) texto += `  🏃 Distância: ${dist} km\n`;
       } else {
         item.cargas_kg?.forEach((carga: number, index: number) => {
-          const reps = item.repeticoes[index];
-          texto += `   Série ${index + 1}: ${carga}kg x ${reps} reps\n`;
+          const reps = item.repeticoes?.[index] || item.repeticoes?.[index];
+          texto += `  Série ${index + 1}: ${carga}kg x ${reps} reps\n`;
         });
       }
+      
+      if (item.observacoes) texto += `  💬 Obs: ${item.observacoes}\n`;
       texto += `\n`;
     });
 
@@ -115,29 +141,53 @@ export default function History() {
     md += `**Data:** ${dataFormatada} | **Duração:** ${duracao} min\n\n`;
 
     workoutDetails.exercicios.forEach((item: any) => {
-      md += `### ${item.exercicios?.nome}\n`;
-      md += `*${item.exercicios?.grupo_pai} | Foco: ${item.exercicios?.musculo_primario}*\n\n`;
-      
-      const isCardio = item.exercicios?.grupo_pai?.trim().toLowerCase() === 'cardio';
+      const nomeExercicio = item.nome || item.exercicios?.nome || 'Exercício Desconhecido';
+      const grupoPai = item.grupo_pai || item.exercicios?.grupo_pai || '';
+      const musculoPrimario = item.musculo_primario || item.exercicios?.musculo_primario || '';
 
-      if (isCardio) {
+      md += `### ${nomeExercicio}\n`;
+      if (grupoPai || musculoPrimario) {
+        md += `*${grupoPai} | Foco: ${musculoPrimario}*\n\n`;
+      }
+      
+      const categoria = item.categoria || item.tipo;
+      const isCardioLegacy = grupoPai.trim().toLowerCase() === 'cardio' && categoria !== 'hiit';
+
+      if (categoria === 'hiit') {
+        let totalSeg = 0, totalDist = 0;
+        item.velocidades_estimulo_real?.forEach((vel: number, idx: number) => {
+           const tOn = item.tempos_estimulo_real?.[idx] || 0;
+           const tOff = item.tempos_descanso_real?.[idx] || 0;
+           const vOff = item.velocidades_descanso_real?.[idx] || 0;
+           totalSeg += (tOn + tOff);
+           totalDist += (tOn / 3600) * vel + (tOff / 3600) * vOff;
+        });
+        const mins = Math.round(totalSeg / 60);
+        const km = Number(totalDist.toFixed(2));
+        
+        md += `**Tempo Total:** ${mins} min | **Distância:** ${km} km\n\n`;
+        md += `| Round | Vel Alta (ON) | Vel Baixa (OFF) |\n`;
+        md += `| :---: | :---: | :---: |\n`;
+        item.velocidades_estimulo_real?.forEach((vel: number, idx: number) => {
+           md += `| ${idx + 1} | **${vel} km/h** (${item.tempos_estimulo_real?.[idx]}s) | ${item.velocidades_descanso_real?.[idx]} km/h (${item.tempos_descanso_real?.[idx]}s) |\n`;
+        });
+      } else if (categoria === 'isometrico') {
+        md += `| Série | Tempo Mantido | Descanso |\n`;
+        md += `| :---: | :---: | :---: |\n`;
+        item.tempos_reais_segundos?.forEach((tempo: number, idx: number) => {
+           md += `| ${idx + 1} | **${tempo}s** | ${item.descansos_segundos?.[idx] || 0}s |\n`;
+        });
+      } else if (categoria === 'cardio' || isCardioLegacy) {
         const tempo = item.tempo_real_minutos || item.tempoRealMinutos;
         const dist = item.distancia_real_km || item.distanciaRealKm;
         md += `**Tempo:** ${tempo ? `${tempo} min` : '-'} | **Distância:** ${dist ? `${dist} km` : '-'}\n`;
       } else {
         md += `| Série | Carga   | Repetições | Descanso |\n`;
         md += `| :---: | :-----: | :--------: | :------: |\n`;
-        
         item.cargas_kg?.forEach((carga: number, index: number) => {
-          const reps = item.repeticoes[index];
-          const descanso = formatTime(item.descansos_segundos[index]);
-          
-          const colSerie = String(index + 1).padEnd(5);
-          const colCarga = `${carga} kg`.padEnd(7);
-          const colReps = String(reps).padEnd(10);
-          const colDesc = String(descanso).padEnd(8);
-
-          md += `| ${colSerie} | ${colCarga} | ${colReps} | ${colDesc} |\n`;
+          const reps = item.repeticoes?.[index];
+          const descanso = formatTime(item.descansos_segundos?.[index] || 0);
+          md += `| ${index + 1} | **${carga} kg** | ${reps} | ${descanso} |\n`;
         });
       }
 
@@ -262,10 +312,8 @@ export default function History() {
   // --- FUNÇÕES DE NAVEGAÇÃO ---
   const handlePrevMonth = () => setCurrentDate(subMonths(currentDate, 1));
   const handleNextMonth = () => setCurrentDate(addMonths(currentDate, 1));
-  
   const handlePrevYear = () => setCurrentDate(subYears(currentDate, 1));
   const handleNextYear = () => setCurrentDate(addYears(currentDate, 1));
-  
   const handleGoToToday = () => setCurrentDate(new Date());
 
   const currentYear = currentDate.getFullYear();
@@ -290,24 +338,13 @@ export default function History() {
         </div>
         
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto">
-          
           <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg p-1 shadow-sm w-full sm:w-auto">
             <button onClick={handlePrevMonth} className="p-2 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-white">
               <ChevronLeft className="w-5 h-5" />
             </button>
-            
-            <select 
-              value={currentMonthIndex} 
-              onChange={(e) => setCurrentDate(setMonth(currentDate, Number(e.target.value)))}
-              className="bg-transparent text-emerald-500 font-bold text-center appearance-none cursor-pointer outline-none text-base md:text-lg w-28"
-            >
-              {meses.map((mes, index) => (
-                <option key={mes} value={index} className="bg-gray-900 text-white">
-                  {mes}
-                </option>
-              ))}
+            <select value={currentMonthIndex} onChange={(e) => setCurrentDate(setMonth(currentDate, Number(e.target.value)))} className="bg-transparent text-emerald-500 font-bold text-center appearance-none cursor-pointer outline-none text-base md:text-lg w-28">
+              {meses.map((mes, index) => (<option key={mes} value={index} className="bg-gray-900 text-white">{mes}</option>))}
             </select>
-
             <button onClick={handleNextMonth} className="p-2 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-white">
               <ChevronRight className="w-5 h-5" />
             </button>
@@ -317,45 +354,28 @@ export default function History() {
             <button onClick={handlePrevYear} className="p-2 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-white">
               <ChevronLeft className="w-5 h-5" />
             </button>
-            
-            <select 
-              value={currentYear} 
-              onChange={(e) => setCurrentDate(setYear(currentDate, Number(e.target.value)))}
-              className="bg-transparent text-gray-300 font-bold text-center appearance-none cursor-pointer outline-none text-base md:text-lg w-16"
-            >
-              {anosDisponiveis.map((ano) => (
-                <option key={ano} value={ano} className="bg-gray-900 text-white">
-                  {ano}
-                </option>
-              ))}
+            <select value={currentYear} onChange={(e) => setCurrentDate(setYear(currentDate, Number(e.target.value)))} className="bg-transparent text-gray-300 font-bold text-center appearance-none cursor-pointer outline-none text-base md:text-lg w-16">
+              {anosDisponiveis.map((ano) => (<option key={ano} value={ano} className="bg-gray-900 text-white">{ano}</option>))}
             </select>
-
             <button onClick={handleNextYear} className="p-2 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-white">
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
-          
         </div>
       </div>
       
       {(currentDate.getMonth() !== new Date().getMonth() || currentDate.getFullYear() !== new Date().getFullYear()) && (
         <div className="flex justify-end mb-4">
-          <button onClick={handleGoToToday} className="text-xs text-emerald-500 hover:text-emerald-400 font-medium transition-colors">
-            Voltar para Hoje
-          </button>
+          <button onClick={handleGoToToday} className="text-xs text-emerald-500 hover:text-emerald-400 font-medium transition-colors">Voltar para Hoje</button>
         </div>
       )}
 
       <div className="bg-gray-900 p-6 rounded-xl border border-gray-800 shadow-sm">
         <div className="grid grid-cols-7 gap-2 text-center mb-4">
-          {diasSemana.map((d, i) => (
-            <div key={i} className="text-sm font-semibold text-gray-500">{d}</div>
-          ))}
+          {diasSemana.map((d, i) => (<div key={i} className="text-sm font-semibold text-gray-500">{d}</div>))}
         </div>
-        
         <div className="grid grid-cols-7 gap-2">
           {espacosVazios.map(v => <div key={`empty-${v}`} />)}
-          
           {diasArray.map(dia => {
             const dateString = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
             const treinou = datasTreinadas.includes(dateString);
@@ -368,16 +388,12 @@ export default function History() {
                 disabled={!treinou}
                 className={`
                   relative aspect-square flex flex-col items-center justify-center text-sm md:text-base rounded-lg transition-all duration-200 font-medium
-                  ${treinou 
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500 hover:text-gray-900 cursor-pointer shadow-[0_0_10px_rgba(16,185,129,0.1)]' 
-                    : 'bg-gray-800/30 text-gray-500 cursor-default hover:bg-gray-800/50'}
+                  ${treinou ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500 hover:text-gray-900 cursor-pointer shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 'bg-gray-800/30 text-gray-500 cursor-default hover:bg-gray-800/50'}
                   ${isToday && !treinou ? 'border border-gray-600' : ''}
                 `}
               >
                 {dia}
-                {isToday && (
-                  <span className="absolute bottom-1 w-1 h-1 rounded-full bg-gray-400"></span>
-                )}
+                {isToday && (<span className="absolute bottom-1 w-1 h-1 rounded-full bg-gray-400"></span>)}
               </button>
             );
           })}
@@ -387,9 +403,7 @@ export default function History() {
       {/* MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          
           <div ref={modalRef} className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            
             <div className="p-6 border-b border-gray-800 flex justify-between items-start">
               <div>
                 <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
@@ -398,63 +412,84 @@ export default function History() {
                 </h2>
                 {workoutDetails && (
                   <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-400">
-                    <span className="flex items-center gap-1">
-                      <Dumbbell className="w-4 h-4" /> 
-                      {workoutDetails.sessao.dias_treino?.nome || 'Treino Extra'}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" /> 
-                      {workoutDetails.sessao.duracao_real_minutos} min
-                    </span>
+                    <span className="flex items-center gap-1"><Dumbbell className="w-4 h-4" /> {workoutDetails.sessao.dias_treino?.nome || 'Treino Extra'}</span>
+                    <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {workoutDetails.sessao.duracao_real_minutos} min</span>
                   </div>
                 )}
               </div>
-              
-              <div data-html2canvas-ignore="true" className="flex items-center gap-2">
-                <button onClick={handleCopyToWhatsApp} className="p-2 bg-gray-800 hover:bg-gray-700 text-emerald-500 rounded-md transition-colors border border-gray-700" title="Copiar Texto">
-                  <Copy className="w-4 h-4" />
-                </button>
-                <button onClick={handleCopyMarkdown} className="p-2 bg-gray-800 hover:bg-gray-700 text-purple-400 rounded-md transition-colors border border-gray-700" title="Copiar Markdown">
-                  <FileCode2 className="w-4 h-4" />
-                </button>
-                <button onClick={handleDownloadJSON} className="p-2 bg-gray-800 hover:bg-gray-700 text-yellow-400 rounded-md transition-colors border border-gray-700" title="Baixar JSON">
-                  <FileJson className="w-4 h-4" />
-                </button>
-                <button onClick={handleDownloadImage} className="p-2 bg-gray-800 hover:bg-gray-700 text-blue-400 rounded-md transition-colors border border-gray-700" title="Baixar Imagem">
-                  <ImageIcon className="w-4 h-4" />
-                </button>
-                <button onClick={handleDownloadPDF} className="p-2 bg-gray-800 hover:bg-gray-700 text-red-400 rounded-md transition-colors border border-gray-700" title="Baixar PDF">
-                  <FileText className="w-4 h-4" />
-                </button>
-                <div className="w-px h-6 bg-gray-700 mx-1"></div>
-                <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-white transition-colors p-2 rounded-md hover:bg-gray-800" title="Fechar">
-                  <X className="w-6 h-6" />
-                </button>
+              <div data-html2canvas-ignore="true" className="flex items-center gap-2 flex-wrap justify-end">
+                <button onClick={handleCopyToWhatsApp} className="p-2 bg-gray-800 hover:bg-gray-700 text-emerald-500 rounded-md transition-colors border border-gray-700" title="Copiar Texto"><Copy className="w-4 h-4" /></button>
+                <button onClick={handleCopyMarkdown} className="p-2 bg-gray-800 hover:bg-gray-700 text-purple-400 rounded-md transition-colors border border-gray-700" title="Copiar Markdown"><FileCode2 className="w-4 h-4" /></button>
+                <button onClick={handleDownloadJSON} className="p-2 bg-gray-800 hover:bg-gray-700 text-yellow-400 rounded-md transition-colors border border-gray-700" title="Baixar JSON"><FileJson className="w-4 h-4" /></button>
+                <button onClick={handleDownloadImage} className="p-2 bg-gray-800 hover:bg-gray-700 text-blue-400 rounded-md transition-colors border border-gray-700" title="Baixar Imagem"><ImageIcon className="w-4 h-4" /></button>
+                <button onClick={handleDownloadPDF} className="p-2 bg-gray-800 hover:bg-gray-700 text-red-400 rounded-md transition-colors border border-gray-700" title="Baixar PDF"><FileText className="w-4 h-4" /></button>
+                <div className="hidden sm:block w-px h-6 bg-gray-700 mx-1"></div>
+                <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-white transition-colors p-2 rounded-md hover:bg-gray-800" title="Fechar"><X className="w-6 h-6" /></button>
               </div>
             </div>
 
             <div className="p-4 md:p-6 overflow-y-auto space-y-6">
               {isLoadingDetails ? (
-                <div className="text-center py-10 text-emerald-500 animate-pulse font-medium">
-                  Buscando dados do treino...
-                </div>
+                <div className="text-center py-10 text-emerald-500 animate-pulse font-medium">Buscando dados do treino...</div>
               ) : workoutDetails?.exercicios ? (
                 workoutDetails.exercicios.map((item: any, exIndex: number) => {
                   
-                  // --- CHECAGEM SE É CARDIO ---
-                  const isCardio = item.exercicios?.grupo_pai?.trim().toLowerCase() === 'cardio';
+                  const nomeExercicio = item.nome || item.exercicios?.nome || 'Exercício Desconhecido';
+                  const grupoPai = item.grupo_pai || item.exercicios?.grupo_pai || '';
+                  const musculoPrimario = item.musculo_primario || item.exercicios?.musculo_primario || '';
+                  
+                  const categoria = item.categoria || item.tipo;
+                  // Correção crucial: Cardio legado NÃO entra se for hiit
+                  const isCardioLegacy = grupoPai.trim().toLowerCase() === 'cardio' && categoria !== 'hiit';
+
+                  // 1. CÁLCULO DINÂMICO PARA HIIT
+                  let hiitTotalMinutos = 0;
+                  let hiitTotalKm = 0;
+
+                  if (categoria === 'hiit' && item.tempos_estimulo_real) {
+                    let totalSegundos = 0;
+                    let totalDistancia = 0;
+
+                    for (let i = 0; i < item.tempos_estimulo_real.length; i++) {
+                      const tOn = item.tempos_estimulo_real[i] || 0;
+                      const tOff = item.tempos_descanso_real?.[i] || 0;
+                      const vOn = item.velocidades_estimulo_real?.[i] || 0;
+                      const vOff = item.velocidades_descanso_real?.[i] || 0;
+
+                      totalSegundos += (tOn + tOff);
+                      totalDistancia += (tOn / 3600) * vOn;
+                      totalDistancia += (tOff / 3600) * vOff;
+                    }
+
+                    hiitTotalMinutos = Math.round(totalSegundos / 60);
+                    hiitTotalKm = Number(totalDistancia.toFixed(2));
+                  }
 
                   return (
                     <div key={exIndex} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
-                      <h3 className="text-base md:text-lg font-semibold text-white mb-1">
-                        {item.exercicios?.nome}
-                      </h3>
-                      <span className="text-xs px-2 py-1 bg-gray-800 text-gray-400 rounded-md mb-4 inline-block">
-                        {item.exercicios?.grupo_pai} | Foco: {item.exercicios?.musculo_primario}
-                      </span>
+                      
+                      <div className="flex justify-between items-start mb-1">
+                        <h3 className="text-base md:text-lg font-semibold text-white">
+                          {nomeExercicio}
+                        </h3>
+                        
+                        {/* Selos Visuais */}
+                        <div className="flex gap-2">
+                           {categoria === 'forca' && <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded font-bold uppercase tracking-wider flex items-center gap-1"><Dumbbell size={12}/> Força</span>}
+                           {categoria === 'hiit' && <span className="text-[10px] bg-yellow-500/10 text-yellow-500 px-2 py-1 rounded font-bold uppercase tracking-wider flex items-center gap-1"><Zap size={12}/> HIIT</span>}
+                           {categoria === 'isometrico' && <span className="text-[10px] bg-blue-500/10 text-blue-500 px-2 py-1 rounded font-bold uppercase tracking-wider flex items-center gap-1"><Timer size={12}/> Iso</span>}
+                           {(categoria === 'cardio' || isCardioLegacy) && <span className="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-1 rounded font-bold uppercase tracking-wider flex items-center gap-1"><Activity size={12}/> Cardio</span>}
+                        </div>
+                      </div>
 
-                      {/* --- RENDERIZAÇÃO CONDICIONAL --- */}
-                      {isCardio ? (
+                      {(grupoPai || musculoPrimario) && (
+                        <span className="text-xs px-2 py-1 bg-gray-800 text-gray-400 rounded-md mb-4 inline-block">
+                          {grupoPai} {grupoPai && musculoPrimario ? '|' : ''} {musculoPrimario ? `Foco: ${musculoPrimario}` : ''}
+                        </span>
+                      )}
+
+                      {/* --- TELA DE CARDIO --- */}
+                      {(categoria === 'cardio' || isCardioLegacy) && (
                         <div className="grid grid-cols-2 gap-4 mt-2 mb-4">
                           <div className="bg-gray-900/80 p-4 rounded-lg border border-gray-700/50 flex flex-col items-center justify-center">
                             <span className="text-gray-400 text-[10px] uppercase tracking-widest font-bold mb-1 flex items-center gap-1"><Clock size={12}/> Tempo</span>
@@ -469,7 +504,85 @@ export default function History() {
                             </span>
                           </div>
                         </div>
-                      ) : (
+                      )}
+
+                      {/* --- TELA DE HIIT --- */}
+                      {categoria === 'hiit' && (
+                        <>
+                          <div className="grid grid-cols-2 gap-4 mt-2 mb-4">
+                            <div className="bg-gray-900/80 p-4 rounded-lg border border-gray-700/50 flex flex-col items-center justify-center">
+                              <span className="text-gray-400 text-[10px] uppercase tracking-widest font-bold mb-1 flex items-center gap-1"><Clock size={12}/> Tempo Total</span>
+                              <span className="text-xl font-bold text-emerald-500">
+                                {hiitTotalMinutos} min
+                              </span>
+                            </div>
+                            <div className="bg-gray-900/80 p-4 rounded-lg border border-gray-700/50 flex flex-col items-center justify-center">
+                              <span className="text-gray-400 text-[10px] uppercase tracking-widest font-bold mb-1 flex items-center gap-1"><Activity size={12}/> Distância Total</span>
+                              <span className="text-xl font-bold text-emerald-500">
+                                {hiitTotalKm} km
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="overflow-x-auto mt-2">
+                            <table className="w-full text-sm text-left whitespace-nowrap">
+                              <thead className="text-xs text-gray-400 border-b border-gray-700">
+                                <tr>
+                                  <th className="pb-2 font-medium">Round</th>
+                                  <th className="pb-2 font-medium text-emerald-500">Vel Alta (ON)</th>
+                                  <th className="pb-2 font-medium text-gray-400">Vel Baixa (OFF)</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-700/50">
+                                {item.velocidades_estimulo_real?.map((velOn: number, i: number) => (
+                                  <tr key={i} className="text-gray-300 hover:bg-gray-800/30 transition-colors">
+                                    <td className="py-2 text-white font-medium pl-2">{i + 1}</td>
+                                    <td className="py-2">
+                                       <div className="flex flex-col">
+                                          <span className="text-emerald-500 font-bold">{velOn} km/h</span>
+                                          <span className="text-xs text-gray-500">{item.tempos_estimulo_real?.[i]}s</span>
+                                       </div>
+                                    </td>
+                                    <td className="py-2">
+                                       <div className="flex flex-col">
+                                          <span className="text-gray-300 font-bold">{item.velocidades_descanso_real?.[i]} km/h</span>
+                                          <span className="text-xs text-gray-500">{item.tempos_descanso_real?.[i]}s</span>
+                                       </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+
+                      {/* --- TELA DE ISOMETRIA --- */}
+                      {categoria === 'isometrico' && (
+                        <div className="overflow-x-auto mt-2">
+                          <table className="w-full text-sm text-left whitespace-nowrap">
+                            <thead className="text-xs text-gray-400 border-b border-gray-700">
+                              <tr>
+                                <th className="pb-2 font-medium">Série</th>
+                                <th className="pb-2 font-medium">Tempo Mantido</th>
+                                <th className="pb-2 font-medium">Descanso</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-700/50">
+                              {item.tempos_reais_segundos?.map((tempo: number, serieIndex: number) => (
+                                <tr key={serieIndex} className="text-gray-300 hover:bg-gray-800/30 transition-colors">
+                                  <td className="py-2 text-emerald-500 font-medium pl-2">{serieIndex + 1}</td>
+                                  <td className="py-2">{tempo}s</td>
+                                  <td className="py-2">{formatTime(item.descansos_segundos?.[serieIndex] || 0)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* --- TELA DE FORÇA --- */}
+                      {categoria === 'forca' && (
                         <div className="overflow-x-auto mt-2">
                           <table className="w-full text-sm text-left whitespace-nowrap">
                             <thead className="text-xs text-gray-400 border-b border-gray-700">
@@ -484,9 +597,9 @@ export default function History() {
                               {item.cargas_kg?.map((carga: number, serieIndex: number) => (
                                 <tr key={serieIndex} className="text-gray-300 hover:bg-gray-800/30 transition-colors">
                                   <td className="py-2 text-emerald-500 font-medium pl-2">{serieIndex + 1}</td>
-                                  <td className="py-2">{carga} kg</td>
-                                  <td className="py-2">{item.repeticoes[serieIndex]}</td>
-                                  <td className="py-2">{formatTime(item.descansos_segundos[serieIndex])}</td>
+                                  <td className="py-2 font-bold">{carga} kg</td>
+                                  <td className="py-2">{item.repeticoes?.[serieIndex]}</td>
+                                  <td className="py-2">{formatTime(item.descansos_segundos?.[serieIndex] || 0)}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -494,12 +607,14 @@ export default function History() {
                         </div>
                       )}
 
+                      {/* OBSERVAÇÕES */}
                       {item.observacoes && (
                         <div className="mt-4 p-3 bg-gray-900/50 rounded text-sm text-gray-400 flex items-start gap-2 border border-gray-800">
                           <MessageSquare className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />
                           <p className="italic whitespace-pre-wrap">"{item.observacoes}"</p>
                         </div>
                       )}
+
                     </div>
                   );
                 })

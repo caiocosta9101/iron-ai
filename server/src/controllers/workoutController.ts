@@ -122,34 +122,76 @@ export const createWorkout = async (req: AuthRequest, res: Response) => {
           }
         }
 
-        const repMin = exercicio.repeticoes_min !== null && exercicio.repeticoes_min !== undefined ? exercicio.repeticoes_min : (exercicio.repeticoes ? parseRepeticoes(exercicio.repeticoes).min : null);
-        const repMax = exercicio.repeticoes_max !== null && exercicio.repeticoes_max !== undefined ? exercicio.repeticoes_max : (exercicio.repeticoes ? parseRepeticoes(exercicio.repeticoes).max : null);
-        const descanso = exercicio.descanso_segundos !== null && exercicio.descanso_segundos !== undefined ? exercicio.descanso_segundos : (exercicio.descanso ? parseDescanso(exercicio.descanso) : null);
-        const series = exercicio.series !== null && exercicio.series !== undefined ? parseInt(exercicio.series) : null;
-
-        const payloadExercicio = {
+        const tipoSeguro = exercicio.tipo?.toLowerCase() || 'forca';
+        
+        const payloadPai = {
           dia_treino_id: diaData.id, 
           exercicio_id: exercicioId, 
           ordem_execucao: i + 1, 
-          series: series, 
-          repeticoes_min: repMin, 
-          repeticoes_max: repMax, 
-          descanso_segundos: descanso, 
-          tempo_meta_minutos: exercicio.tempo_meta_minutos || null, 
-          distancia_meta_km: exercicio.distancia_meta_km || null, 
-          observacoes: exercicio.observacao || exercicio.observacoes || ""
+          observacoes: exercicio.observacao || exercicio.observacoes || "",
+          tipo: tipoSeguro
         };
 
-        console.log("🔥 TENTANDO INSERIR EXERCÍCIO:", payloadExercicio);
-
-        const { error: ligacaoError } = await supabase
+        const { data: parentData, error: parentError } = await supabase
           .from('exercicios_treino')
-          .insert([payloadExercicio]);
+          .insert([payloadPai])
+          .select('id')
+          .single();
 
-        if (ligacaoError) {
-          console.error("❌ ERRO DO SUPABASE AO SALVAR EXERCÍCIO:", ligacaoError);
-          throw ligacaoError;
+        if (parentError) {
+          console.error("❌ ERRO AO SALVAR TABELA PAI:", parentError);
+          throw parentError;
         }
+
+        const exercicioTreinoId = parentData.id;
+
+        switch (tipoSeguro) {
+          case 'forca':
+            const repMin = exercicio.repeticoes_min !== null && exercicio.repeticoes_min !== undefined ? exercicio.repeticoes_min : (exercicio.repeticoes ? parseRepeticoes(exercicio.repeticoes).min : null);
+            const repMax = exercicio.repeticoes_max !== null && exercicio.repeticoes_max !== undefined ? exercicio.repeticoes_max : (exercicio.repeticoes ? parseRepeticoes(exercicio.repeticoes).max : null);
+            const descForca = exercicio.descanso_segundos !== null && exercicio.descanso_segundos !== undefined ? exercicio.descanso_segundos : (exercicio.descanso ? parseDescanso(exercicio.descanso) : null);
+            
+            await supabase.from('exercicio_forca_detalhes').insert([{
+              exercicio_treino_id: exercicioTreinoId,
+              series: exercicio.series ? parseInt(exercicio.series) : null,
+              repeticoes_min: repMin,
+              repeticoes_max: repMax,
+              descanso_segundos: descForca
+            }]);
+            break;
+
+          case 'cardio':
+            await supabase.from('exercicio_cardio_detalhes').insert([{
+              exercicio_treino_id: exercicioTreinoId,
+              tempo_meta_minutos: exercicio.tempo_meta_minutos || null,
+              distancia_meta_km: exercicio.distancia_meta_km || null
+            }]);
+            break;
+
+          case 'isometrico':
+            await supabase.from('exercicio_isometrico_detalhes').insert([{
+              exercicio_treino_id: exercicioTreinoId,
+              series: exercicio.series ? parseInt(exercicio.series as string) : null,
+              tempo_segundos: exercicio.tempo_segundos || null,
+              descanso_segundos: exercicio.descanso_segundos || null
+            }]);
+            break;
+
+          case 'hiit':
+            const { error: hiitError } = await supabase.from('exercicio_hiit_detalhes').insert([{
+              exercicio_treino_id: exercicioTreinoId,
+              rounds: exercicio.rounds || null,
+              tempos_estimulo_segundos: exercicio.tempos_estimulo_segundos || [],
+              tempos_descanso_segundos: exercicio.tempos_descanso_segundos || []
+            }]);
+            
+            if (hiitError) {
+               console.error("❌ ERRO AO SALVAR TABELA FILHA (HIIT):", hiitError);
+               throw hiitError; 
+            }
+            break;
+        }
+        
       }
     }
 
@@ -190,8 +232,12 @@ export const getWorkoutById = async (req: AuthRequest, res: Response) => {
         dias_treino (
           id, nome, ordem_dia, observacoes, foco,
           exercicios_treino (
-            id, series, repeticoes_min, repeticoes_max, descanso_segundos, tempo_meta_minutos, distancia_meta_km, observacoes, ordem_execucao,
-            exercicios ( nome, categoria, equipamentos ( nome ) )
+            id, observacoes, ordem_execucao, tipo,
+            exercicios ( nome, categoria, equipamentos ( nome ) ),
+            exercicio_forca_detalhes ( series, repeticoes_min, repeticoes_max, descanso_segundos ),
+            exercicio_cardio_detalhes ( tempo_meta_minutos, distancia_meta_km ),
+            exercicio_isometrico_detalhes ( series, tempo_segundos, descanso_segundos ),
+            exercicio_hiit_detalhes ( rounds, tempos_estimulo_segundos, tempos_descanso_segundos )
           )
         )
       `)
@@ -220,19 +266,25 @@ export const getWorkoutById = async (req: AuthRequest, res: Response) => {
           foco: dia.foco,
           exercicios: dia.exercicios_treino
             .sort((a: any, b: any) => a.ordem_execucao - b.ordem_execucao) 
-            .map((ex: any) => ({
-              id: ex.id,
-              nome: ex.exercicios.nome, 
-              categoria: ex.exercicios.categoria,
-              equipamento: ex.exercicios?.equipamentos?.nome || 'Peso do Corpo',
-              series: ex.series,
-              repeticoes_min: ex.repeticoes_min,
-              repeticoes_max: ex.repeticoes_max,
-              descanso_segundos: ex.descanso_segundos,
-              tempo_meta_minutos: ex.tempo_meta_minutos,
-              distancia_meta_km: ex.distancia_meta_km,
-              observacoes: ex.observacoes
-            }))
+            .map((ex: any) => {
+              const detalhesForca = Array.isArray(ex.exercicio_forca_detalhes) ? ex.exercicio_forca_detalhes[0] : ex.exercicio_forca_detalhes;
+              const detalhesCardio = Array.isArray(ex.exercicio_cardio_detalhes) ? ex.exercicio_cardio_detalhes[0] : ex.exercicio_cardio_detalhes;
+              const detalhesIso = Array.isArray(ex.exercicio_isometrico_detalhes) ? ex.exercicio_isometrico_detalhes[0] : ex.exercicio_isometrico_detalhes;
+              const detalhesHiit = Array.isArray(ex.exercicio_hiit_detalhes) ? ex.exercicio_hiit_detalhes[0] : ex.exercicio_hiit_detalhes;
+
+              return {
+                id: ex.id,
+                nome: ex.exercicios.nome, 
+                categoria: ex.exercicios.categoria,
+                equipamento: ex.exercicios?.equipamentos?.nome || 'Peso do Corpo',
+                observacoes: ex.observacoes,
+                tipo: ex.tipo,
+                ...(ex.tipo?.toLowerCase() === 'forca' && detalhesForca),
+                ...(ex.tipo?.toLowerCase() === 'cardio' && detalhesCardio),
+                ...(ex.tipo?.toLowerCase() === 'isometrico' && detalhesIso),
+                ...(ex.tipo?.toLowerCase() === 'hiit' && detalhesHiit)
+              };
+            })
         }))
     };
 
@@ -284,57 +336,45 @@ export const deleteWorkout = async (req: AuthRequest, res: Response) => {
 
 export const updateExercise = async (req: AuthRequest, res: Response) => {
   const { id } = req.params; 
-  let { series, repeticoes_min, repeticoes_max, descanso_segundos, tempo_meta_minutos, distancia_meta_km, exercicio_id } = req.body;
+  const { exercicio_id, observacoes, tipo, ...detalhes } = req.body;
   const userId = req.userId; 
 
   try {
-    // --- BLINDAGEM DE DADOS (NOVA REGRA) ---
-    // Se veio tempo ou distância, é cardio. Forçamos a limpeza dos dados de força.
-    const isCardio = (tempo_meta_minutos && tempo_meta_minutos > 0) || (distancia_meta_km && distancia_meta_km > 0);
-
-    if (isCardio) {
-      series = null;
-      repeticoes_min = null;
-      repeticoes_max = null;
-      descanso_segundos = null;
-    } else {
-      tempo_meta_minutos = null;
-      distancia_meta_km = null;
-    }
-    // ---------------------------------------
-
     const { data: authCheck, error: authError } = await supabase
       .from('exercicios_treino')
-      .select(`
-        id,
-        dias_treino (
-          treinos (
-            usuario_id
-          )
-        )
-      `)
+      .select(`id, tipo, dias_treino ( treinos ( usuario_id ) )`)
       .eq('id', id)
       .single();
 
-    if (authError || !authCheck) {
-      return res.status(404).json({ error: 'Exercício não encontrado.' });
-    }
+    if (authError || !authCheck) return res.status(404).json({ error: 'Exercício não encontrado.' });
 
     const donoId = (authCheck as any)?.dias_treino?.treinos?.usuario_id;
-    
-    if (donoId !== userId) {
-      return res.status(403).json({ error: 'Acesso negado. Você não tem permissão para alterar este exercício.' });
+    if (donoId !== userId) return res.status(403).json({ error: 'Acesso negado.' });
+
+    await supabase.from('exercicios_treino')
+      .update({ exercicio_id, observacoes })
+      .eq('id', id);
+
+    const tipoReal = (tipo || authCheck.tipo)?.toLowerCase();
+
+    if (Object.keys(detalhes).length > 0) {
+      switch (tipoReal) {
+        case 'forca':
+          await supabase.from('exercicio_forca_detalhes').update(detalhes).eq('exercicio_treino_id', id);
+          break;
+        case 'cardio':
+          await supabase.from('exercicio_cardio_detalhes').update(detalhes).eq('exercicio_treino_id', id);
+          break;
+        case 'isometrico':
+          await supabase.from('exercicio_isometrico_detalhes').update(detalhes).eq('exercicio_treino_id', id);
+          break;
+        case 'hiit':
+          await supabase.from('exercicio_hiit_detalhes').update(detalhes).eq('exercicio_treino_id', id);
+          break;
+      }
     }
 
-    const { data, error } = await supabase
-      .from('exercicios_treino')
-      .update({ series, repeticoes_min, repeticoes_max, descanso_segundos, tempo_meta_minutos, distancia_meta_km, exercicio_id })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return res.status(200).json({ message: 'Exercício atualizado com sucesso', data });
+    return res.status(200).json({ message: 'Exercício atualizado com sucesso' });
   } catch (error: any) {
     return res.status(500).json({ error: 'Erro interno ao atualizar exercício.' });
   }
@@ -393,14 +433,9 @@ export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
         observacoes,
         exercicios_treino (
           id,
-          series,
-          repeticoes_min,
-          repeticoes_max,
-          descanso_segundos,
-          tempo_meta_minutos,
-          distancia_meta_km,
           observacoes,
           ordem_execucao,
+          tipo,
           exercicios (
             id,
             nome,
@@ -410,7 +445,11 @@ export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
             equipamentos (
               nome
             )
-          )
+          ),
+          exercicio_forca_detalhes ( series, repeticoes_min, repeticoes_max, descanso_segundos ),
+          exercicio_cardio_detalhes ( tempo_meta_minutos, distancia_meta_km ),
+          exercicio_isometrico_detalhes ( series, tempo_segundos, descanso_segundos ),
+          exercicio_hiit_detalhes ( rounds, tempos_estimulo_segundos, tempos_descanso_segundos )
         ) 
       `)
       .eq('id', id)
@@ -420,9 +459,27 @@ export const getWorkoutDayDetails = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Dia de treino não encontrado' });
     }
 
-    const sortedExercises = dayDetails.exercicios_treino.sort((a: any, b: any) => 
-      a.ordem_execucao - b.ordem_execucao
-    );
+    const sortedExercises = dayDetails.exercicios_treino
+      .sort((a: any, b: any) => a.ordem_execucao - b.ordem_execucao)
+      .map((ex: any) => {
+        const detalhesForca = Array.isArray(ex.exercicio_forca_detalhes) ? ex.exercicio_forca_detalhes[0] : ex.exercicio_forca_detalhes;
+        const detalhesCardio = Array.isArray(ex.exercicio_cardio_detalhes) ? ex.exercicio_cardio_detalhes[0] : ex.exercicio_cardio_detalhes;
+        const detalhesIso = Array.isArray(ex.exercicio_isometrico_detalhes) ? ex.exercicio_isometrico_detalhes[0] : ex.exercicio_isometrico_detalhes;
+        const detalhesHiit = Array.isArray(ex.exercicio_hiit_detalhes) ? ex.exercicio_hiit_detalhes[0] : ex.exercicio_hiit_detalhes;
+
+        return {
+                id: ex.id,
+                nome: ex.exercicios.nome, 
+                categoria: ex.exercicios.categoria,
+                equipamento: ex.exercicios?.equipamentos?.nome || 'Peso do Corpo',
+                observacoes: ex.observacoes,
+                tipo: ex.tipo,
+                ...(ex.tipo?.toLowerCase() === 'forca' && detalhesForca),
+                ...(ex.tipo?.toLowerCase() === 'cardio' && detalhesCardio),
+                ...(ex.tipo?.toLowerCase() === 'isometrico' && detalhesIso),
+                ...(ex.tipo?.toLowerCase() === 'hiit' && detalhesHiit)
+              };
+      });
 
     return res.json({
       ...(dayDetails as any),
@@ -475,23 +532,10 @@ export const addDayToWorkout = async (req: AuthRequest, res: Response) => {
 
 export const addExerciseToDay = async (req: AuthRequest, res: Response) => {
   const { id } = req.params; 
-  let { exercicio_id, series, repeticoes_min, repeticoes_max, descanso_segundos, tempo_meta_minutos, distancia_meta_km, observacoes } = req.body;
+  const { exercicio_id, tipo, observacoes, ...detalhes } = req.body;
+  const tipoSeguro = tipo?.toLowerCase() || 'forca';
   
   try {
-    // --- BLINDAGEM DE DADOS (NOVA REGRA) ---
-    const isCardio = (tempo_meta_minutos && tempo_meta_minutos > 0) || (distancia_meta_km && distancia_meta_km > 0);
-
-    if (isCardio) {
-      series = null;
-      repeticoes_min = null;
-      repeticoes_max = null;
-      descanso_segundos = null;
-    } else {
-      tempo_meta_minutos = null;
-      distancia_meta_km = null;
-    }
-    // ---------------------------------------
-
     const { data: maxEx } = await supabase
       .from('exercicios_treino')
       .select('ordem_execucao')
@@ -502,43 +546,41 @@ export const addExerciseToDay = async (req: AuthRequest, res: Response) => {
 
     const nextOrdem = maxEx ? maxEx.ordem_execucao + 1 : 1;
 
-    const { data: novaRelacao, error } = await supabase
+    const { data: novaRelacao, error: parentError } = await supabase
       .from('exercicios_treino')
       .insert([{
         dia_treino_id: id, 
         exercicio_id, 
         ordem_execucao: nextOrdem, 
-        series, 
-        repeticoes_min, 
-        repeticoes_max, 
-        descanso_segundos,
-        tempo_meta_minutos,
-        distancia_meta_km,
+        tipo: tipoSeguro,
         observacoes: observacoes || ""
       }])
       .select(`
-        id, series, repeticoes_min, repeticoes_max, descanso_segundos, tempo_meta_minutos, distancia_meta_km, observacoes, ordem_execucao,
+        id, observacoes, ordem_execucao, tipo,
         exercicios ( nome, categoria, equipamentos ( nome ) )
       `)
       .single();
 
-    if (error) throw error;
+    if (parentError) throw parentError;
 
-    const formatado = {
-      id: novaRelacao.id,
-      nome: (novaRelacao.exercicios as any).nome,
-      categoria: (novaRelacao.exercicios as any).categoria,
-      equipamento: (novaRelacao.exercicios as any)?.equipamentos?.nome || 'Peso do Corpo',
-      series: novaRelacao.series,
-      repeticoes_min: novaRelacao.repeticoes_min,
-      repeticoes_max: novaRelacao.repeticoes_max,
-      descanso_segundos: novaRelacao.descanso_segundos,
-      tempo_meta_minutos: novaRelacao.tempo_meta_minutos,
-      distancia_meta_km: novaRelacao.distancia_meta_km,
-      observacoes: novaRelacao.observacoes
-    };
+    const exercicioTreinoId = novaRelacao.id;
 
-    return res.status(201).json(formatado);
+    switch (tipoSeguro) {
+      case 'forca':
+        await supabase.from('exercicio_forca_detalhes').insert([{ exercicio_treino_id: exercicioTreinoId, ...detalhes }]);
+        break;
+      case 'cardio':
+        await supabase.from('exercicio_cardio_detalhes').insert([{ exercicio_treino_id: exercicioTreinoId, ...detalhes }]);
+        break;
+      case 'isometrico':
+        await supabase.from('exercicio_isometrico_detalhes').insert([{ exercicio_treino_id: exercicioTreinoId, ...detalhes }]);
+        break;
+      case 'hiit':
+        await supabase.from('exercicio_hiit_detalhes').insert([{ exercicio_treino_id: exercicioTreinoId, ...detalhes }]);
+        break;
+    }
+
+    return res.status(201).json({ message: 'Exercício adicionado com sucesso', id: exercicioTreinoId });
   } catch (error: any) {
     return res.status(500).json({ error: 'Erro interno ao adicionar exercício.' });
   }

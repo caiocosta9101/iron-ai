@@ -25,69 +25,122 @@ export const saveWorkoutSession = async (req: AuthRequest, res: Response) => {
         throw sessaoError || new Error("Falha ao criar sessão de histórico.");
     }
     
-    // Acessa o ID retornado corretamente
     const sessaoId = sessaoResult.id;
 
-    // 2. SALVAR CADA EXERCÍCIO EXECUTADO
-    const exerciciosPayload = exerciciosRealizados.map((ex: any) => {
-        const isCardio = ex.categoria === 'cardio';
+    // --- 💡 A ABORDAGEM PROFISSIONAL: BULK FETCH ---
+    // Extrai todos os IDs de relação que o frontend enviou
+    const idsRelacao = exerciciosRealizados.map((ex: any) => ex.id);
 
-        // Lógica para Cardio: Só salva se o aluno preencheu algum tempo ou distância
-        if (isCardio) {
-            if (!ex.tempoRealMinutos && !ex.distanciaRealKm) return null; // Ignora se não fez nada
+    // Faz APENAS UMA consulta ao banco para trazer todas as traduções
+    const { data: relacoesGlobais, error: erroRelacoes } = await supabase
+      .from('exercicios_treino')
+      .select('id, exercicio_id')
+      .in('id', idsRelacao); // Busca todos que estão nesta lista
 
-            return {
-                sessao_id: sessaoId,
-                exercicio_id: ex.id,
-                observacoes: ex.observacoes || "",
-                // Campos exclusivos de cardio:
-                tempo_real_minutos: ex.tempoRealMinutos || null,
-                distancia_real_km: ex.distanciaRealKm || null,
-                // Array vazios para não quebrar restrições de força (se houver)
-                cargas_kg: [], 
-                repeticoes: [],
-                descansos_segundos: []
-            };
+    if (erroRelacoes || !relacoesGlobais) {
+       throw new Error("Falha ao buscar as referências globais dos exercícios.");
+    }
+
+    // Cria um dicionário em memória (Hash Map) para busca instantânea no loop
+    // Ex: { 977: 15, 978: 42 }
+    const mapaExercicios = relacoesGlobais.reduce((acc, atual) => {
+      acc[atual.id] = atual.exercicio_id;
+      return acc;
+    }, {} as Record<number, number>);
+    // ------------------------------------------------
+
+    // 2. ROTEAMENTO DE SALVAMENTO
+    for (const ex of exerciciosRealizados) {
+      
+      const exercicioGlobalId = mapaExercicios[ex.id];
+
+      if (!exercicioGlobalId) {
+        console.error(`⚠️ Exercício da relação ${ex.id} não encontrado no mapa. Pulando...`);
+        continue;
+      }
+
+      // A. Salva na Tabela Pai
+      const { data: execData, error: execError } = await supabase
+        .from('historico_execucao_exercicio')
+        .insert([{
+          sessao_id: sessaoId,
+          exercicio_id: exercicioGlobalId, // <--- Uso instantâneo da memória, sem consulta!
+          observacoes: ex.observacoes || "",
+          tipo: ex.categoria
+        }])
+        .select('id')
+        .single();
+
+      if (execError) {
+        console.error(`❌ Erro na Tabela Pai (${ex.categoria}):`, execError);
+        throw execError;
+      }
+
+      const execucaoId = execData.id;
+      let childError = null;
+
+      // B. Distribui para as Tabelas Filhas
+      switch (ex.categoria) {
+        case 'forca': {
+          const series = ex.seriesFeitas || [];
+          const { error } = await supabase.from('execucao_forca_detalhes').insert([{
+            execucao_id: execucaoId,
+            cargas_kg: series.map((s: any) => parseFloat(s.peso) || 0),
+            repeticoes: series.map((s: any) => parseInt(s.reps) || 0),
+            descansos_segundos: series.map((s: any) => parseInt(s.descansoRealizado) || 0)
+          }]);
+          childError = error;
+          break;
         }
+        case 'isometrico': {
+          const series = ex.seriesFeitas || [];
+          const { error } = await supabase.from('execucao_isometrico_detalhes').insert([{
+            execucao_id: execucaoId,
+            series_completadas: series.length,
+            tempos_reais_segundos: series.map((s: any) => parseInt(s.reps) || 0), 
+            descansos_segundos: series.map((s: any) => parseInt(s.descansoRealizado) || 0)
+          }]);
+          childError = error;
+          break;
+        }
+        case 'hiit': {
+          const series = ex.seriesFeitas || [];
+          const { error } = await supabase.from('execucao_hiit_detalhes').insert([{
+            execucao_id: execucaoId,
+            rounds_completados: series.length,
+            velocidades_estimulo_real: series.map((s: any) => parseFloat(s.hiitVelAlta) || 0),
+            velocidades_descanso_real: series.map((s: any) => parseFloat(s.hiitVelBaixa) || 0),
+            tempos_estimulo_real: series.map((s: any) => parseInt(s.hiitTempoAlta) || 0),
+            tempos_descanso_real: series.map((s: any) => parseInt(s.hiitTempoBaixa) || 0)
+          }]);
+          childError = error;
+          break;
+        }
+        case 'cardio': {
+          const { error } = await supabase.from('execucao_cardio_detalhes').insert([{
+            execucao_id: execucaoId,
+            tempo_real_minutos: ex.tempoRealMinutos ? parseFloat(ex.tempoRealMinutos) : null,
+            distancia_real_km: ex.distanciaRealKm ? parseFloat(ex.distanciaRealKm) : null
+          }]);
+          childError = error;
+          break;
+        }
+      }
 
-        // Lógica para Força (Musculação): 
-        const seriesFeitas = ex.seriesFeitas?.filter((s: any) => s.concluido) || [];
-        if (seriesFeitas.length === 0) return null; // Ignora se não fez nenhuma série
-
-        const cargas = seriesFeitas.map((s: any) => parseFloat(s.peso) || 0);
-        const reps = seriesFeitas.map((s: any) => parseInt(s.reps) || 0);
-        const descansos = seriesFeitas.map((s: any) => s.descansoRealizado || 0);
-
-        return {
-            sessao_id: sessaoId,
-            exercicio_id: ex.id, 
-            observacoes: ex.observacoes || "", 
-            // Campos exclusivos de força:
-            cargas_kg: cargas,   
-            repeticoes: reps,
-            descansos_segundos: descansos,     
-            // Campos de cardio ficam nulos
-            tempo_real_minutos: null,
-            distancia_real_km: null
-        };
-    }).filter((item: any) => item !== null); // Remove os nulos (exercícios pulados)
-
-    // Só faz o insert se tiver dados válidos
-    if (exerciciosPayload.length > 0) {
-        const { error: execError } = await supabase
-            .from('historico_execucao_exercicio')
-            .insert(exerciciosPayload);
-
-        if (execError) throw execError;
+      if (childError) {
+         console.error(`❌ Erro na Tabela Filha (${ex.categoria}):`, childError);
+         throw childError;
+      }
     }
 
     return res.status(201).json({ message: 'Treino salvo com sucesso!', sessaoId: sessaoId });
 
   } catch (error) {
-    console.error('Erro ao salvar histórico:', error);
+    console.error('🚨 ERRO FATAL AO SALVAR HISTÓRICO:', error);
     return res.status(500).json({ error: 'Falha ao registrar treino.' });
   }
 };
+
 
 // --- BUSCAR DATAS PARA O CALENDÁRIO ---
 export const getWorkoutDates = async (req: AuthRequest, res: Response) => {
@@ -115,7 +168,7 @@ export const getWorkoutDates = async (req: AuthRequest, res: Response) => {
 // --- BUSCAR DETALHES DE UM DIA ESPECÍFICO ---
 export const getWorkoutDetailsByDate = async (req: AuthRequest, res: Response) => {
   const userId = req.userId;
-  const { date } = req.params; // Formato esperado: YYYY-MM-DD
+  const { date } = req.params; 
 
   try {
     const { data: sessoes, error: sessaoError } = await supabase
@@ -133,25 +186,47 @@ export const getWorkoutDetailsByDate = async (req: AuthRequest, res: Response) =
 
     const sessaoId = sessoes[0].id;
 
-    // NOVO: Adicionadas as colunas de tempo e distancia na query
+    // Ajustado para buscar de todas as tabelas filhas simultaneamente
     const { data: exercicios, error: execError } = await supabase
       .from('historico_execucao_exercicio')
       .select(`
-        cargas_kg,
-        repeticoes,
-        descansos_segundos,
-        tempo_real_minutos,
-        distancia_real_km,
+        id,
         observacoes,
-        exercicios (nome, grupo_pai, musculo_primario, categoria)
+        tipo,
+        exercicios (nome, grupo_pai, musculo_primario, categoria),
+        execucao_forca_detalhes (cargas_kg, repeticoes, descansos_segundos),
+        execucao_cardio_detalhes (tempo_real_minutos, distancia_real_km, inclinacao_real, bpm_medio_real, percepcao_esforco),
+        execucao_isometrico_detalhes (series_completadas, tempos_reais_segundos, descansos_segundos),
+        execucao_hiit_detalhes (rounds_completados, velocidades_estimulo_real, velocidades_descanso_real, tempos_estimulo_real, tempos_descanso_real)
       `)
       .eq('sessao_id', sessaoId);
 
     if (execError) throw execError;
 
+    // "Achatando" o objeto para mandar pro Front
+    const exerciciosAchatados = exercicios.map((ex: any) => {
+      const detalhesForca = Array.isArray(ex.execucao_forca_detalhes) ? ex.execucao_forca_detalhes[0] : ex.execucao_forca_detalhes;
+      const detalhesCardio = Array.isArray(ex.execucao_cardio_detalhes) ? ex.execucao_cardio_detalhes[0] : ex.execucao_cardio_detalhes;
+      const detalhesIso = Array.isArray(ex.execucao_isometrico_detalhes) ? ex.execucao_isometrico_detalhes[0] : ex.execucao_isometrico_detalhes;
+      const detalhesHiit = Array.isArray(ex.execucao_hiit_detalhes) ? ex.execucao_hiit_detalhes[0] : ex.execucao_hiit_detalhes;
+
+      return {
+        id: ex.id,
+        nome: ex.exercicios.nome,
+        grupo_pai: ex.exercicios.grupo_pai,           
+        musculo_primario: ex.exercicios.musculo_primario, 
+        categoria: ex.tipo,
+        observacoes: ex.observacoes,
+        ...(ex.tipo === 'forca' && detalhesForca),
+        ...(ex.tipo === 'cardio' && detalhesCardio),
+        ...(ex.tipo === 'isometrico' && detalhesIso),
+        ...(ex.tipo === 'hiit' && detalhesHiit)
+      };
+    });
+
     return res.status(200).json({
       sessao: sessoes[0],
-      exercicios: exercicios
+      exercicios: exerciciosAchatados
     });
 
   } catch (error) {

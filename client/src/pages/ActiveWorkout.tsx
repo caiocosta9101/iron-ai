@@ -14,7 +14,7 @@ import {
   MessageSquarePlus,
   Square,
   Zap,
-  Activity // Ícone novo para o Cardio
+  Activity
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../services/api";
@@ -22,25 +22,35 @@ import api from "../services/api";
 // --- TIPAGEM ---
 interface SerieExecucao {
   id: number;
-  peso: string;
-  reps: string;
+  peso: string; 
+  reps: string; 
   concluido: boolean;
   descansoRealizado?: number;
+  
+  hiitVelAlta?: string;
+  hiitTempoAlta?: string;
+  hiitVelBaixa?: string;
+  hiitTempoBaixa?: string;
 }
 
 interface ExercicioExecucao {
   id: string;
   nome: string;
-  categoria: string; // NOVO: 'forca' ou 'cardio'
+  categoria: string; 
   equipamento: string;
   seriesAlvo: number | null;
   repsAlvo: string | null;
   descansoSegundos: number | null;
-  tempoMetaMinutos: number | null; // NOVO
-  distanciaMetaKm: number | null;  // NOVO
+  tempoMetaMinutos: number | null; 
+  distanciaMetaKm: number | null;  
+
+  tempoSegundosAlvo: number | null;
+  roundsAlvo: number | null;
+  temposEstimulo: number[] | null;
+  temposDescanso: number[] | null;
+
   seriesFeitas: SerieExecucao[];
   observacoesUsuario: string;
-  // Campos de execução do Cardio
   tempoRealMinutos: string; 
   distanciaRealKm: string;
   cardioConcluido: boolean;
@@ -57,7 +67,7 @@ export default function ActiveWorkout() {
   const [workoutName, setWorkoutName] = useState("");
   const [exercicios, setExercicios] = useState<ExercicioExecucao[]>([]);
 
-  // === NOVOS ESTADOS PARA O MODO RÁPIDO ===
+  // Estados para o Modo Rápido
   const [isManualMode, setIsManualMode] = useState(false);
   const [manualDuration, setManualDuration] = useState<string>("45");
 
@@ -66,10 +76,7 @@ export default function ActiveWorkout() {
   const [tempoDescanso, setTempoDescanso] = useState(0);
   const [timerDescansoAtivo, setTimerDescansoAtivo] = useState(false);
 
-  // Referência para saber onde salvar o descanso
-  const lastSerieRef = useRef<{ exIndex: number; serieIndex: number } | null>(
-    null,
-  );
+  const lastSerieRef = useRef<{ exIndex: number; serieIndex: number } | null>(null);
 
   // --- 1. CARREGAR DADOS ---
   useEffect(() => {
@@ -77,13 +84,10 @@ export default function ActiveWorkout() {
       try {
         if (!id) return;
 
-        const savedSession = localStorage.getItem(
-          `iron_ai_workout_progress_${id}`,
-        );
+        const savedSession = localStorage.getItem(`iron_ai_workout_progress_${id}`);
 
         if (savedSession) {
           const data = JSON.parse(savedSession);
-
           const segundosAusente = data.lastUpdateTimestamp
             ? Math.floor((Date.now() - data.lastUpdateTimestamp) / 1000)
             : 0;
@@ -118,37 +122,48 @@ export default function ActiveWorkout() {
           diaTreino.exercicios_treino || []
         ).map((ex: any) => {
           
-          // --- APLICANDO A NORMALIZAÇÃO DA CATEGORIA AQUI ---
-          const categoriaNormalizada = ex.exercicios?.grupo_pai?.trim().toLowerCase();
-          const isCardio = categoriaNormalizada === 'cardio';
+          const categoria = ex.tipo || 'forca';
+          const isCardio = categoria === 'cardio';
 
-          // Se for cardio, não precisa criar o array de séries
+          const qtdLinhas = ex.rounds || ex.series || 3;
+
           const seriesIniciais: SerieExecucao[] = isCardio ? [] : Array.from({
-            length: ex.series || 3,
+            length: qtdLinhas,
           }).map((_, i) => ({
             id: i,
             peso: "",
             reps: "",
             concluido: false,
             descansoRealizado: 0,
+            
+            hiitVelAlta: "",
+            hiitTempoAlta: categoria === 'hiit' ? String(ex.tempos_estimulo_segundos?.[i] || ex.tempos_estimulo_segundos?.[0] || "") : "",
+            hiitVelBaixa: "",
+            hiitTempoBaixa: categoria === 'hiit' ? String(ex.tempos_descanso_segundos?.[i] || ex.tempos_descanso_segundos?.[0] || "") : "",
           }));
 
-          const repsString = isCardio 
-            ? null 
-            : (ex.repeticoes_min === ex.repeticoes_max
+          const repsString = categoria === 'forca' 
+            ? (ex.repeticoes_min === ex.repeticoes_max
               ? `${ex.repeticoes_min}`
-              : `${ex.repeticoes_min}-${ex.repeticoes_max}`);
+              : `${ex.repeticoes_min}-${ex.repeticoes_max}`)
+            : null;
 
           return {
-            id: ex.exercicios.id,
-            nome: ex.exercicios.nome,
-            categoria: categoriaNormalizada || 'forca', // --- USANDO A CATEGORIA NORMALIZADA ---
-            equipamento: ex.exercicios?.equipamentos?.nome || "Peso do Corpo",
+            id: ex.id,
+            nome: ex.nome,
+            categoria: categoria,
+            equipamento: ex.equipamento,
             seriesAlvo: ex.series || null,
             repsAlvo: repsString,
             descansoSegundos: ex.descanso_segundos || null,
             tempoMetaMinutos: ex.tempo_meta_minutos || null,
             distanciaMetaKm: ex.distancia_meta_km || null,
+            
+            tempoSegundosAlvo: ex.tempo_segundos || null,
+            roundsAlvo: ex.rounds || null,
+            temposEstimulo: ex.tempos_estimulo_segundos || null,
+            temposDescanso: ex.tempos_descanso_segundos || null,
+
             seriesFeitas: seriesIniciais,
             observacoesUsuario: "",
             tempoRealMinutos: "",
@@ -197,9 +212,7 @@ export default function ActiveWorkout() {
       lastTickDescanso.current = Date.now();
       interval = setInterval(() => {
         const now = Date.now();
-        const diffSegundos = Math.round(
-          (now - lastTickDescanso.current) / 1000,
-        );
+        const diffSegundos = Math.round((now - lastTickDescanso.current) / 1000);
         if (diffSegundos > 0) {
           setTempoDescanso((prev) => prev + diffSegundos);
           lastTickDescanso.current = now;
@@ -221,8 +234,7 @@ export default function ActiveWorkout() {
 
     if (timerDescansoAtivo && !serie.concluido && lastSerieRef.current) {
       const { exIndex: lastEx, serieIndex: lastSerie } = lastSerieRef.current;
-      novosExercicios[lastEx].seriesFeitas[lastSerie].descansoRealizado =
-        tempoDescanso;
+      novosExercicios[lastEx].seriesFeitas[lastSerie].descansoRealizado = tempoDescanso;
     }
 
     serie.concluido = !serie.concluido;
@@ -239,8 +251,7 @@ export default function ActiveWorkout() {
     if (lastSerieRef.current) {
       const { exIndex, serieIndex } = lastSerieRef.current;
       const novosExercicios = [...exercicios];
-      novosExercicios[exIndex].seriesFeitas[serieIndex].descansoRealizado =
-        tempoDescanso;
+      novosExercicios[exIndex].seriesFeitas[serieIndex].descansoRealizado = tempoDescanso;
       setExercicios(novosExercicios);
       lastSerieRef.current = null;
     }
@@ -280,36 +291,24 @@ export default function ActiveWorkout() {
         isWorkoutStarted: true,
         lastUpdateTimestamp: Date.now(),
       };
-      localStorage.setItem(
-        `iron_ai_workout_progress_${id}`,
-        JSON.stringify(sessionData),
-      );
+      localStorage.setItem(`iron_ai_workout_progress_${id}`, JSON.stringify(sessionData));
     } else if (!isWorkoutStarted) {
       localStorage.removeItem(`iron_ai_workout_progress_${id}`);
     }
-  }, [
-    exercicios,
-    tempoTotal,
-    tempoDescanso,
-    timerDescansoAtivo,
-    workoutName,
-    loading,
-    id,
-    isWorkoutStarted,
-    isManualMode,
-  ]);
+  }, [exercicios, tempoTotal, tempoDescanso, timerDescansoAtivo, workoutName, loading, id, isWorkoutStarted, isManualMode]);
 
+  // --- HANDLER GERAL DE INPUTS ---
   const handleUpdateValue = (
     exIndex: number,
     serieIndex: number,
-    campo: "peso" | "reps" | "descanso",
+    campo: "peso" | "reps" | "descanso" | "hiitVelAlta" | "hiitTempoAlta" | "hiitVelBaixa" | "hiitTempoBaixa",
     valor: string,
   ) => {
     let valorLimpo = valor;
 
-    if (campo === "reps" || campo === "descanso") {
-      valorLimpo = valor.replace(/\D/g, ""); // Apenas números
-    } else if (campo === "peso") {
+    if (campo === "reps" || campo === "descanso" || campo === "hiitTempoAlta" || campo === "hiitTempoBaixa") {
+      valorLimpo = valor.replace(/\D/g, ""); 
+    } else if (campo === "peso" || campo === "hiitVelAlta" || campo === "hiitVelBaixa") {
       valorLimpo = valor.replace(/[^0-9.,]/g, "");
       const partes = valorLimpo.split(/[.,]/);
       if (partes.length > 2) {
@@ -340,49 +339,47 @@ export default function ActiveWorkout() {
 
       if (timerDescansoAtivo && lastSerieRef.current && !isManualMode) {
         const { exIndex, serieIndex } = lastSerieRef.current;
-        exercicios[exIndex].seriesFeitas[serieIndex].descansoRealizado =
-          tempoDescanso;
+        exercicios[exIndex].seriesFeitas[serieIndex].descansoRealizado = tempoDescanso;
       }
 
-      const duracaoFinalSegundos = isManualMode
-        ? Number(manualDuration) * 60
-        : tempoTotal;
+      const duracaoFinalSegundos = isManualMode ? Number(manualDuration) * 60 : tempoTotal;
 
       const exerciciosProcessados = exercicios
         .map((ex) => {
-          // 1. Filtra apenas as séries que o usuário realmente preencheu carga e repetição
           const seriesValidas = ex.seriesFeitas
-            .filter((serie) => serie.peso !== "" && serie.reps !== "")
+            .filter((serie) => {
+              if (isManualMode) return true; 
+              
+              if (ex.categoria === 'forca') return serie.peso !== "" && serie.reps !== "";
+              if (ex.categoria === 'isometrico') return serie.reps !== "";
+              
+              if (ex.categoria === 'hiit') return serie.hiitVelAlta !== "" && serie.hiitTempoAlta !== ""; 
+              
+              return true;
+            })
             .map((serie) => {
-              if (isManualMode) {
-                return { ...serie, concluido: true };
-              }
+              if (isManualMode) return { ...serie, concluido: true };
               return serie;
             });
 
           return {
             id: ex.id,
-            categoria: ex.categoria, // Informamos a categoria para o backend
-            seriesFeitas: seriesValidas, // Manda só as séries válidas (ou [] se for cardio)
+            categoria: ex.categoria,
+            seriesFeitas: seriesValidas,
             observacoes: ex.observacoesUsuario,
             tempoRealMinutos: ex.tempoRealMinutos ? Number(ex.tempoRealMinutos) : null,
             distanciaRealKm: ex.distanciaRealKm ? Number(ex.distanciaRealKm) : null,
           };
         })
-        // 2. Remove os exercícios que o usuário deixou em branco (não fez nada)
         .filter((ex) => {
-          const isCardio = ex.categoria === 'cardio';
-          // Se for cardio, tem que ter preenchido tempo, distância ou observação
-          if (isCardio) {
+          if (ex.categoria === 'cardio') {
             return ex.tempoRealMinutos || ex.distanciaRealKm || ex.observacoes;
           }
-          // Se for força, tem que ter sobrado pelo menos uma série válida
           return ex.seriesFeitas.length > 0;
         });
 
-      // Se após o filtro não sobrou nenhum exercício (treino 100% em branco), bloqueia o envio
       if (exerciciosProcessados.length === 0) {
-        toast.error("Preencha pelo menos uma série ou cardio para salvar.");
+        toast.error("Preencha pelo menos uma série, HIIT ou cardio para salvar.");
         setSaving(false);
         return;
       }
@@ -419,10 +416,7 @@ export default function ActiveWorkout() {
       {/* HEADER FIXO */}
       <header className="sticky top-0 bg-[#112218]/95 backdrop-blur border-b border-[#193324] p-4 z-20 shadow-md">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <button
-            onClick={() => navigate("/dashboard")}
-            className="text-slate-400 hover:text-white p-2 -ml-2"
-          >
+          <button onClick={() => navigate("/dashboard")} className="text-slate-400 hover:text-white p-2 -ml-2">
             <ArrowLeft />
           </button>
           
@@ -439,14 +433,10 @@ export default function ActiveWorkout() {
           <button
             onClick={() => {
               setIsManualMode(!isManualMode);
-              if (!isManualMode) {
-                  setTimerDescansoAtivo(false);
-              }
+              if (!isManualMode) setTimerDescansoAtivo(false);
             }}
             className={`px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors shadow-sm text-[10px] uppercase font-bold border whitespace-nowrap ${
-              isManualMode
-                ? "bg-[#13ec6a] text-[#112218] border-[#13ec6a]"
-                : "bg-[#13ec6a]/10 text-[#13ec6a] border-[#13ec6a]/30 hover:bg-[#13ec6a]/20 hover:border-[#13ec6a]/50"
+              isManualMode ? "bg-[#13ec6a] text-[#112218] border-[#13ec6a]" : "bg-[#13ec6a]/10 text-[#13ec6a] border-[#13ec6a]/30 hover:bg-[#13ec6a]/20 hover:border-[#13ec6a]/50"
             }`}
           >
             <Zap size={14} fill={isManualMode ? "currentColor" : "none"} />
@@ -462,20 +452,17 @@ export default function ActiveWorkout() {
           const isCardio = ex.categoria === 'cardio';
 
           return (
-            <div
-              key={ex.id}
-              className={`animate-in fade-in slide-in-from-bottom-4 duration-500 bg-[#193324]/20 p-4 rounded-2xl border ${isManualMode ? 'border-[#13ec6a]/30' : 'border-white/5'}`}
-            >
+            <div key={ex.id} className={`animate-in fade-in slide-in-from-bottom-4 duration-500 bg-[#193324]/20 p-4 rounded-2xl border ${isManualMode ? 'border-[#13ec6a]/30' : 'border-white/5'}`}>
               <div className="mb-4">
                 <div className="flex justify-between items-start mb-1">
                   <h2 className="text-xl font-black text-white leading-tight w-3/4 flex items-center gap-2">
                     {ex.nome}
                   </h2>
                   
-                  {/* Etiqueta de Descanso (Força) ou Etiqueta de Cardio */}
+                  {/* Etiquetas Superiores */}
                   {!isManualMode && !isCardio && ex.descansoSegundos && (
                     <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap bg-white/5 px-2 py-1 rounded flex items-center gap-1">
-                      <Timer size={10} /> Meta: {ex.descansoSegundos}s
+                      <Timer size={10} /> Pausa: {ex.descansoSegundos}s
                     </div>
                   )}
                   {isCardio && (
@@ -485,117 +472,147 @@ export default function ActiveWorkout() {
                   )}
                 </div>
 
-                {/* Subtítulo (Séries ou Meta de Cardio) */}
+                {/* Subtítulos Específicos por Categoria */}
                 <div className="flex items-center gap-2 text-[#92c9a8] text-sm mb-4">
-                  {!isCardio ? (
-                    <>
-                      <Dumbbell size={14} />
-                      <span>{ex.seriesAlvo} séries x {ex.repsAlvo} reps</span>
-                    </>
-                  ) : (
-                    <>
-                      <Timer size={14} />
-                      <span>
-                        Meta: {ex.tempoMetaMinutos ? `${ex.tempoMetaMinutos} min` : 'Livre'} 
-                        {ex.distanciaMetaKm ? ` • ${ex.distanciaMetaKm} km` : ''}
-                      </span>
-                    </>
+                  {ex.categoria === 'forca' && (
+                    <><Dumbbell size={14} /> <span>{ex.seriesAlvo} séries x {ex.repsAlvo} reps</span></>
+                  )}
+                  {ex.categoria === 'isometrico' && (
+                    <><Timer size={14} /> <span>{ex.seriesAlvo} séries x {ex.tempoSegundosAlvo}s (Isometria)</span></>
+                  )}
+                  {ex.categoria === 'hiit' && (
+                    <><Zap size={14} /> <span>{ex.roundsAlvo} Rounds • ON: {ex.temposEstimulo?.[0] || 0}s</span></>
+                  )}
+                  {ex.categoria === 'cardio' && (
+                    <><Activity size={14} /> <span>Meta: {ex.tempoMetaMinutos ? `${ex.tempoMetaMinutos} min` : 'Livre'} {ex.distanciaMetaKm ? ` • ${ex.distanciaMetaKm} km` : ''}</span></>
                   )}
                 </div>
 
                 {/* ========================================= */}
-                {/* RENDERIZAÇÃO CONDICIONAL: FORÇA VS CARDIO   */}
+                {/* RENDERIZAÇÃO DINÂMICA DE TABELAS          */}
                 {/* ========================================= */}
                 {!isCardio ? (
-                  // Tabela de FORÇA Clássica
                   <div className="space-y-2">
+                    
+                    {/* CABEÇALHOS DINÂMICOS POR CATEGORIA */}
                     <div className="grid grid-cols-12 gap-2 text-[#92c9a8] text-[10px] uppercase font-bold tracking-widest px-2 opacity-50">
-                      <div className="col-span-2 text-center">Set</div>
-                      <div className="col-span-3 text-center">KG</div>
-                      <div className="col-span-3 text-center">Reps</div>
-                      {isManualMode ? (
-                        <div className="col-span-4 text-center">Pausa (s)</div>
-                      ) : (
-                        <div className="col-span-4 text-center">Check</div>
+                      <div className="col-span-2 text-center">{ex.categoria === 'hiit' ? 'Round' : 'Set'}</div>
+                      
+                      {ex.categoria === 'forca' && (
+                        <>
+                          <div className="col-span-3 text-center">KG</div>
+                          <div className="col-span-3 text-center">Reps</div>
+                          <div className="col-span-4 text-center">{isManualMode ? 'Pausa (s)' : 'Check'}</div>
+                        </>
+                      )}
+                      
+                      {/* ISOMETRIA HEADER (Corrigido para ocultar check no modo rápido) */}
+                      {ex.categoria === 'isometrico' && (
+                        <>
+                          <div className="col-span-6 text-center">Tempo (s)</div>
+                          <div className="col-span-4 text-center">{isManualMode ? 'Pausa (s)' : 'Check'}</div>
+                        </>
+                      )}
+                      
+                      {/* HIIT HEADER (Corrigido para ocultar check no modo rápido) */}
+                      {ex.categoria === 'hiit' && (
+                        <>
+                          <div className={`text-center leading-tight ${isManualMode ? 'col-span-3' : 'col-span-2'}`}>Veloc.<br/><span className="text-[8px] text-[#13ec6a]">Alta</span></div>
+                          <div className="col-span-2 text-center leading-tight">Segs.<br/><span className="text-[8px] text-[#13ec6a]">ON</span></div>
+                          <div className={`text-center leading-tight ${isManualMode ? 'col-span-3' : 'col-span-2'}`}>Veloc.<br/><span className="text-[8px] text-white">Baixa</span></div>
+                          <div className="col-span-2 text-center leading-tight">Segs.<br/><span className="text-[8px] text-white">OFF</span></div>
+                          {!isManualMode && <div className="col-span-2 text-center">Check</div>}
+                        </>
                       )}
                     </div>
 
+                    {/* RENDERIZAÇÃO DINÂMICA DAS LINHAS */}
                     {ex.seriesFeitas.map((serie, serieIndex) => {
-                      const hasValues = serie.peso !== "" && serie.reps !== "";
+                      let hasValues = false;
+                      if (ex.categoria === 'forca') hasValues = serie.peso !== "" && serie.reps !== "";
+                      if (ex.categoria === 'isometrico') hasValues = serie.reps !== "";
+                      if (ex.categoria === 'hiit') hasValues = (serie.hiitVelAlta || "") !== ""; 
+
                       const showAsCompleted = serie.concluido || (isManualMode && hasValues);
 
                       return (
-                        <div
-                          key={serie.id}
-                          className={`
-                            grid grid-cols-12 gap-2 items-center p-2 rounded-lg border transition-all duration-200
-                            ${showAsCompleted ? "bg-[#13ec6a]/5 border-[#13ec6a]/20" : "bg-[#193324]/50 border-white/5"}
-                          `}
-                        >
+                        <div key={serie.id} className={`grid grid-cols-12 gap-2 items-center p-2 rounded-lg border transition-all duration-200 ${showAsCompleted ? "bg-[#13ec6a]/5 border-[#13ec6a]/20" : "bg-[#193324]/50 border-white/5"}`}>
+                          
+                          {/* INDICADOR DE SÉRIE / ROUND */}
                           <div className="col-span-2 flex justify-center flex-col items-center">
-                            <span
-                              className={`
-                                font-bold text-sm w-7 h-7 flex items-center justify-center rounded-full
-                                ${showAsCompleted ? "bg-[#13ec6a] text-[#112218]" : "bg-white/10 text-white/50"}
-                              `}
-                            >
+                            <span className={`font-bold text-sm w-7 h-7 flex items-center justify-center rounded-full ${showAsCompleted ? "bg-[#13ec6a] text-[#112218]" : "bg-white/10 text-white/50"}`}>
                               {serieIndex + 1}
                             </span>
-                            {serie.descansoRealizado && !isManualMode ? (
+                            {serie.descansoRealizado && !isManualMode && ex.categoria === 'forca' ? (
                               <span className="text-[9px] text-[#13ec6a] mt-1 font-mono">
                                 {serie.descansoRealizado}s
                               </span>
                             ) : null}
                           </div>
 
-                          <div className="col-span-3">
-                            <input
-                              type="tel"
-                              inputMode="decimal"
-                              maxLength={6}
-                              value={serie.peso}
-                              onChange={(e) => handleUpdateValue(exIndex, serieIndex, "peso", e.target.value)}
-                              placeholder="-"
-                              className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`}
-                            />
-                          </div>
+                          {/* FORÇA: Peso e Reps */}
+                          {ex.categoria === 'forca' && (
+                            <>
+                              <div className="col-span-3">
+                                <input type="tel" inputMode="decimal" maxLength={6} value={serie.peso} onChange={(e) => handleUpdateValue(exIndex, serieIndex, "peso", e.target.value)} placeholder="-" className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] ${showAsCompleted ? "text-[#13ec6a]" : ""}`} />
+                              </div>
+                              <div className="col-span-3">
+                                <input type="tel" inputMode="numeric" maxLength={3} value={serie.reps} onChange={(e) => handleUpdateValue(exIndex, serieIndex, "reps", e.target.value)} placeholder={ex.repsAlvo?.split("-")[0]} className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] ${showAsCompleted ? "text-[#13ec6a]" : ""}`} />
+                              </div>
+                              <div className="col-span-4 flex justify-center">
+                                {isManualMode ? (
+                                  <input type="tel" inputMode="numeric" maxLength={3} value={serie.descansoRealizado || ""} onChange={(e) => handleUpdateValue(exIndex, serieIndex, "descanso", e.target.value)} placeholder={`${ex.descansoSegundos || 60}s`} className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`} />
+                                ) : (
+                                  <button onClick={() => handleCheckSet(exIndex, serieIndex)} className={`h-9 w-full rounded flex items-center justify-center transition-all active:scale-95 ${serie.concluido ? "bg-[#13ec6a]/20 text-[#13ec6a]" : "bg-white/5 text-slate-500 hover:bg-white/10"}`}>
+                                    {serie.concluido ? <CircleCheck size={20} /> : <Circle size={20} />}
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
 
-                          <div className="col-span-3">
-                            <input
-                              type="tel"
-                              inputMode="numeric"
-                              maxLength={3}
-                              value={serie.reps}
-                              onChange={(e) => handleUpdateValue(exIndex, serieIndex, "reps", e.target.value)}
-                              placeholder={ex.repsAlvo?.split("-")[0]}
-                              className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`}
-                            />
-                          </div>
+                          {/* ISOMETRIA: Tempo e Pausa (Corrigido para o modo manual) */}
+                          {ex.categoria === 'isometrico' && (
+                            <>
+                              <div className="col-span-6">
+                                 <input type="tel" inputMode="numeric" maxLength={4} value={serie.reps} onChange={(e) => handleUpdateValue(exIndex, serieIndex, "reps", e.target.value)} placeholder={`${ex.tempoSegundosAlvo}s`} className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] ${showAsCompleted ? "text-[#13ec6a]" : ""}`} />
+                              </div>
+                              
+                              <div className="col-span-4 flex justify-center">
+                                {isManualMode ? (
+                                  <input type="tel" inputMode="numeric" maxLength={4} value={serie.descansoRealizado || ""} onChange={(e) => handleUpdateValue(exIndex, serieIndex, "descanso", e.target.value)} placeholder={`${ex.descansoSegundos || 0}s`} className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`} />
+                                ) : (
+                                  <button onClick={() => handleCheckSet(exIndex, serieIndex)} className={`h-9 w-full rounded flex items-center justify-center transition-all active:scale-95 ${serie.concluido ? "bg-[#13ec6a]/20 text-[#13ec6a]" : "bg-white/5 text-slate-500 hover:bg-white/10"}`}>
+                                    {serie.concluido ? <CircleCheck size={20} /> : <Circle size={20} />}
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
 
-                          {isManualMode ? (
-                            <div className="col-span-4">
-                              <input
-                                type="tel"
-                                inputMode="numeric"
-                                maxLength={3}
-                                value={serie.descansoRealizado || ""}
-                                onChange={(e) => handleUpdateValue(exIndex, serieIndex, "descanso", e.target.value)}
-                                placeholder={`${ex.descansoSegundos}s`}
-                                className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/10 focus:border-[#13ec6a] transition-colors ${showAsCompleted ? "text-[#13ec6a]" : ""}`}
-                              />
-                            </div>
-                          ) : (
-                            <div className="col-span-4 flex justify-center">
-                              <button
-                                onClick={() => handleCheckSet(exIndex, serieIndex)}
-                                className={`
-                                  h-9 w-full rounded flex items-center justify-center transition-all active:scale-95
-                                  ${serie.concluido ? "bg-[#13ec6a]/20 text-[#13ec6a]" : "bg-white/5 text-slate-500 hover:bg-white/10"}
-                                `}
-                              >
-                                {serie.concluido ? <CircleCheck size={20} /> : <Circle size={20} />}
-                              </button>
-                            </div>
+                          {/* HIIT: 4 CAMPOS DINÂMICOS (Corrigido para ocultar o check no modo manual) */}
+                          {ex.categoria === 'hiit' && (
+                            <>
+                              <div className={isManualMode ? "col-span-3" : "col-span-2"}>
+                                 <input type="tel" inputMode="decimal" maxLength={5} value={serie.hiitVelAlta || ""} onChange={(e) => handleUpdateValue(exIndex, serieIndex, "hiitVelAlta", e.target.value)} placeholder="-" className={`w-full bg-transparent border-b border-white/10 text-[#13ec6a] text-center py-1 outline-none font-bold placeholder:text-[#13ec6a]/30 focus:border-[#13ec6a] ${showAsCompleted ? "text-[#13ec6a]" : ""}`} />
+                              </div>
+                              <div className="col-span-2">
+                                 <input type="tel" inputMode="numeric" maxLength={4} value={serie.hiitTempoAlta || ""} onChange={(e) => handleUpdateValue(exIndex, serieIndex, "hiitTempoAlta", e.target.value)} placeholder={`${ex.temposEstimulo?.[0] || 0}s`} className={`w-full bg-transparent border-b border-white/10 text-[#13ec6a] text-center py-1 outline-none font-bold placeholder:text-[#13ec6a]/30 focus:border-[#13ec6a] ${showAsCompleted ? "text-[#13ec6a]" : ""}`} />
+                              </div>
+                              <div className={isManualMode ? "col-span-3" : "col-span-2"}>
+                                 <input type="tel" inputMode="decimal" maxLength={5} value={serie.hiitVelBaixa || ""} onChange={(e) => handleUpdateValue(exIndex, serieIndex, "hiitVelBaixa", e.target.value)} placeholder="-" className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/30 focus:border-[#13ec6a] ${showAsCompleted ? "text-[#13ec6a]" : ""}`} />
+                              </div>
+                              <div className="col-span-2">
+                                 <input type="tel" inputMode="numeric" maxLength={4} value={serie.hiitTempoBaixa || ""} onChange={(e) => handleUpdateValue(exIndex, serieIndex, "hiitTempoBaixa", e.target.value)} placeholder={`${ex.temposDescanso?.[0] || 0}s`} className={`w-full bg-transparent border-b border-white/10 text-white text-center py-1 outline-none font-bold placeholder:text-white/30 focus:border-[#13ec6a] ${showAsCompleted ? "text-[#13ec6a]" : ""}`} />
+                              </div>
+                              {!isManualMode && (
+                                <div className="col-span-2 flex justify-center">
+                                  <button onClick={() => handleCheckSet(exIndex, serieIndex)} className={`h-9 w-full rounded flex items-center justify-center transition-all active:scale-95 ${serie.concluido ? "bg-[#13ec6a]/20 text-[#13ec6a]" : "bg-white/5 text-slate-500 hover:bg-white/10"}`}>
+                                    {serie.concluido ? <CircleCheck size={20} /> : <Circle size={20} />}
+                                  </button>
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       );
@@ -607,8 +624,6 @@ export default function ActiveWorkout() {
                   // =========================================
                   <div className={`p-4 rounded-xl border transition-all duration-300 ${ex.cardioConcluido || (isManualMode && (ex.tempoRealMinutos || ex.distanciaRealKm)) ? 'bg-[#13ec6a]/5 border-[#13ec6a]/30' : 'bg-black/20 border-white/5'}`}>
                     <div className="grid grid-cols-2 gap-4">
-                      
-                      {/* Input Tempo */}
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">Tempo Feito (Min)</label>
                         <div className="relative">
@@ -623,7 +638,6 @@ export default function ActiveWorkout() {
                         </div>
                       </div>
 
-                      {/* Input Distância */}
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">Distância (KM)</label>
                         <div className="relative">
@@ -654,15 +668,15 @@ export default function ActiveWorkout() {
                   </div>
                 )}
 
-                {/* Observações Livres (Serve para Força e Cardio) */}
+                {/* Observações Livres (Serve para Todas as Categorias) */}
                 <div className="mt-4 pt-4 border-t border-white/5">
                   <div className="flex items-center gap-2 mb-2 text-slate-400 text-xs font-bold uppercase tracking-widest">
-                    <MessageSquarePlus size={14} /> Observações / {isCardio ? 'Pace e Fôlego' : 'Dores'}
+                    <MessageSquarePlus size={14} /> Observações / {isCardio || ex.categoria === 'hiit' ? 'Pace e Fôlego' : 'Dores'}
                   </div>
                   <textarea
                     value={ex.observacoesUsuario}
                     onChange={(e) => handleObservacaoChange(exIndex, e.target.value)}
-                    placeholder={isCardio ? "Ex: Corri super bem, pace bom hoje..." : "Ex: Senti o ombro estalar, aumentei carga fácil..."}
+                    placeholder={isCardio || ex.categoria === 'hiit' ? "Ex: Corri super bem, pace bom hoje..." : "Ex: Senti o ombro estalar, aumentei carga fácil..."}
                     className="w-full bg-[#112218] border border-white/10 rounded-lg p-3 text-sm text-white placeholder:text-slate-600 focus:border-[#13ec6a] outline-none min-h-[60px] resize-none"
                   />
                 </div>

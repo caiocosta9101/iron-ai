@@ -3,23 +3,38 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronLeft, Dumbbell, Clock, Activity, Calendar, 
   AlertCircle, Trash2, Edit3, Check, X, Save, RefreshCw, Search, Plus,
-  CalendarDays
+  CalendarDays, Zap, Timer
 } from 'lucide-react';
 import api from '../services/api';
 import { toast } from 'sonner';
 
-// --- DEFINIÇÃO DOS TIPOS ---
+// --- DEFINIÇÃO DOS TIPOS (Atualizado para o modelo Híbrido) ---
+export type TipoModalidade = 'forca' | 'cardio' | 'isometrico' | 'hiit';
+
 interface Exercicio {
   id: string; // ID da tabela pivô (exercicios_treino)
   nome: string;
   equipamento: string; 
-  series: number;
-  repeticoes_min: number;
-  repeticoes_max: number;
-  descanso_segundos: number;
+  tipo: TipoModalidade; // Adicionado para servir de discriminador
   observacoes: string | null;
-  tempo_meta_minutos: number | null;
-  distancia_meta_km: number | null;
+  
+  // Metas de Força
+  series?: number;
+  repeticoes_min?: number;
+  repeticoes_max?: number;
+  descanso_segundos?: number;
+  
+  // Metas de Cardio
+  tempo_meta_minutos?: number | null;
+  distancia_meta_km?: number | null;
+
+  // Metas de Isometria
+  tempo_segundos?: number;
+
+  // Metas de HIIT
+  rounds?: number;
+  tempos_estimulo_segundos?: number[];
+  tempos_descanso_segundos?: number[];
 }
 
 interface DiaTreino {
@@ -68,7 +83,7 @@ export default function WorkoutDetails() {
   const [isAddingDay, setIsAddingDay] = useState(false);
   const [newDayForm, setNewDayForm] = useState({ nome: 'Treino B', foco: '' });
 
-  // Estados para Adição de Novo Exercício (Atualizado com tempo e distância)
+  // Estados para Adição de Novo Exercício (Preparado para as 4 modalidades)
   const [addingExerciseToDayId, setAddingExerciseToDayId] = useState<string | null>(null);
   const [searchNewEx, setSearchNewEx] = useState('');
   const [selectedNewEx, setSelectedNewEx] = useState<any | null>(null);
@@ -78,7 +93,9 @@ export default function WorkoutDetails() {
     repeticoes_max: 12, 
     descanso_segundos: 60,
     tempo_meta_minutos: 0,
-    distancia_meta_km: 0
+    distancia_meta_km: 0,
+    tempo_segundos: 45, // Isometria
+    rounds: 8, tempos_estimulo_segundos: 20, tempos_descanso_hiit: 10 // HIIT
   });
 
   useEffect(() => {
@@ -155,29 +172,30 @@ export default function WorkoutDetails() {
   const handleSaveExercise = async (diaId: string) => {
     try {
       // --- BLINDAGEM DE PAYLOAD NO FRONTEND ---
-      // Garante que só vamos enviar para o backend os campos que pertencem à categoria do exercício
-      const isCardioEdit = ((editedExercise.tempo_meta_minutos ?? 0) > 0) || ((editedExercise.distancia_meta_km ?? 0) > 0);
-      
-      const payloadLimpo = {
+      let payloadLimpo: any = {
         id: editedExercise.id,
         nome: editedExercise.nome,
         equipamento: editedExercise.equipamento,
         observacoes: editedExercise.observacoes,
-        ...(isCardioEdit 
-          ? { 
-              tempo_meta_minutos: editedExercise.tempo_meta_minutos, 
-              distancia_meta_km: editedExercise.distancia_meta_km,
-              series: null, repeticoes_min: null, repeticoes_max: null, descanso_segundos: null
-            }
-          : { 
-              series: editedExercise.series, 
-              repeticoes_min: editedExercise.repeticoes_min, 
-              repeticoes_max: editedExercise.repeticoes_max, 
-              descanso_segundos: editedExercise.descanso_segundos,
-              tempo_meta_minutos: null, distancia_meta_km: null
-            }
-        )
       };
+
+      switch(editedExercise.tipo) {
+        case 'forca':
+          payloadLimpo = { ...payloadLimpo, series: editedExercise.series, repeticoes_min: editedExercise.repeticoes_min, repeticoes_max: editedExercise.repeticoes_max, descanso_segundos: editedExercise.descanso_segundos };
+          break;
+        case 'cardio':
+          payloadLimpo = { ...payloadLimpo, tempo_meta_minutos: editedExercise.tempo_meta_minutos, distancia_meta_km: editedExercise.distancia_meta_km };
+          break;
+        case 'isometrico':
+          payloadLimpo = { ...payloadLimpo, series: editedExercise.series, tempo_segundos: editedExercise.tempo_segundos, descanso_segundos: editedExercise.descanso_segundos };
+          break;
+        case 'hiit':
+          payloadLimpo = { ...payloadLimpo, rounds: editedExercise.rounds, tempos_estimulo_segundos: editedExercise.tempos_estimulo_segundos, tempos_descanso_segundos: editedExercise.tempos_descanso_segundos };
+          break;
+        default:
+          // Fallback se não vier o tipo do backend (compatibilidade retroativa)
+          payloadLimpo = { ...payloadLimpo, series: editedExercise.series, repeticoes_min: editedExercise.repeticoes_min, repeticoes_max: editedExercise.repeticoes_max, descanso_segundos: editedExercise.descanso_segundos };
+      }
 
       await api.put(`/workouts/exercises/${editedExercise.id}`, payloadLimpo);
       toast.success("Exercício atualizado!");
@@ -224,7 +242,8 @@ export default function WorkoutDetails() {
             const newExs = d.exercicios.map(e => e.id === oldExId ? { 
               ...e, 
               nome: newLibraryEx.nome,
-              equipamento: newLibraryEx.equipamentos?.nome || 'Peso do Corpo'
+              equipamento: newLibraryEx.equipamentos?.nome || 'Peso do Corpo',
+              tipo: newLibraryEx.categoria // Atualiza o tipo na interface
             } : e);
             return { ...d, exercicios: newExs };
           }
@@ -287,25 +306,27 @@ export default function WorkoutDetails() {
   const handleConfirmAddExercise = async (diaId: string) => {
     try {
       // --- BLINDAGEM DE PAYLOAD NO FRONTEND ---
-      const isCardioNew = selectedNewEx.categoria?.toLowerCase() === 'cardio';
+      const categoria = selectedNewEx.categoria?.toLowerCase() as TipoModalidade || 'forca';
       
-      const payloadLimpo = {
+      let payloadLimpo: any = { 
         exercicio_id: selectedNewEx.id,
-        ...(isCardioNew 
-          ? { 
-              tempo_meta_minutos: newExForm.tempo_meta_minutos, 
-              distancia_meta_km: newExForm.distancia_meta_km,
-              series: null, repeticoes_min: null, repeticoes_max: null, descanso_segundos: null
-            }
-          : { 
-              series: newExForm.series, 
-              repeticoes_min: newExForm.repeticoes_min, 
-              repeticoes_max: newExForm.repeticoes_max, 
-              descanso_segundos: newExForm.descanso_segundos,
-              tempo_meta_minutos: null, distancia_meta_km: null
-            }
-        )
+        tipo: categoria // Informação valiosa para o schema
       };
+
+      switch(categoria) {
+        case 'forca': 
+          payloadLimpo = { ...payloadLimpo, series: newExForm.series, repeticoes_min: newExForm.repeticoes_min, repeticoes_max: newExForm.repeticoes_max, descanso_segundos: newExForm.descanso_segundos }; 
+          break;
+        case 'cardio': 
+          payloadLimpo = { ...payloadLimpo, tempo_meta_minutos: newExForm.tempo_meta_minutos, distancia_meta_km: newExForm.distancia_meta_km }; 
+          break;
+        case 'isometrico': 
+          payloadLimpo = { ...payloadLimpo, series: newExForm.series, tempo_segundos: newExForm.tempo_segundos, descanso_segundos: newExForm.descanso_segundos }; 
+          break;
+        case 'hiit': 
+          payloadLimpo = { ...payloadLimpo, rounds: newExForm.rounds, tempos_estimulo_segundos: [newExForm.tempos_estimulo_segundos], tempos_descanso_segundos: [newExForm.tempos_descanso_hiit] }; 
+          break;
+      }
 
       const response = await api.post(`/workouts/days/${diaId}/exercises`, payloadLimpo);
       toast.success("Exercício adicionado!");
@@ -537,37 +558,76 @@ export default function WorkoutDetails() {
                       /* --- MODO EDIÇÃO INLINE DO EXERCÍCIO --- */
                       <div className="flex flex-wrap items-center gap-3 animate-in fade-in">
                         {(() => {
-                          // Identifica se é cardio verificando se possui metas de tempo ou distância cadastradas
-                          const isCardioEdit = ((editedExercise.tempo_meta_minutos ?? 0) > 0) || ((editedExercise.distancia_meta_km ?? 0) > 0);
+                          const tipoEx = editedExercise.tipo || 'forca'; // Fallback visual
 
-                          return isCardioEdit ? (
-                            /* Edição para CARDIO */
-                            <>
-                              <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
-                                <span className="text-xs text-[#92c9a8] uppercase font-bold">Tempo (min)</span>
-                                <input type="number" className="w-16 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.tempo_meta_minutos || ''} onChange={(e) => setEditedExercise({...editedExercise, tempo_meta_minutos: Number(e.target.value)})} />
-                              </div>
-                              <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
-                                <span className="text-xs text-[#92c9a8] uppercase font-bold">Distância (km)</span>
-                                <input type="number" step="0.1" className="w-16 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.distancia_meta_km || ''} onChange={(e) => setEditedExercise({...editedExercise, distancia_meta_km: Number(e.target.value)})} />
-                              </div>
-                            </>
-                          ) : (
-                            /* Edição para FORÇA */
+                          if (tipoEx === 'cardio') {
+                            return (
+                              <>
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Tempo (min)</span>
+                                  <input type="number" className="w-16 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.tempo_meta_minutos || ''} onChange={(e) => setEditedExercise({...editedExercise, tempo_meta_minutos: Number(e.target.value)})} />
+                                </div>
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Dist. (km)</span>
+                                  <input type="number" step="0.1" className="w-16 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.distancia_meta_km || ''} onChange={(e) => setEditedExercise({...editedExercise, distancia_meta_km: Number(e.target.value)})} />
+                                </div>
+                              </>
+                            );
+                          }
+
+                          if (tipoEx === 'isometrico') {
+                            return (
+                              <>
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Séries</span>
+                                  <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.series || ''} onChange={(e) => setEditedExercise({...editedExercise, series: Number(e.target.value)})} />
+                                </div>
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Tempo (s)</span>
+                                  <input type="number" className="w-16 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.tempo_segundos || ''} onChange={(e) => setEditedExercise({...editedExercise, tempo_segundos: Number(e.target.value)})} />
+                                </div>
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Rest</span>
+                                  <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.descanso_segundos || ''} onChange={(e) => setEditedExercise({...editedExercise, descanso_segundos: Number(e.target.value)})} />
+                                  <span className="text-xs font-bold text-[#326747]">s</span>
+                                </div>
+                              </>
+                            );
+                          }
+
+                          if (tipoEx === 'hiit') {
+                            return (
+                              <>
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Rounds</span>
+                                  <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.rounds || ''} onChange={(e) => setEditedExercise({...editedExercise, rounds: Number(e.target.value)})} />
+                                </div>
+                                <div className="flex items-center gap-1 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold mr-1">ON</span>
+                                  <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.tempos_estimulo_segundos?.[0] || ''} onChange={(e) => setEditedExercise({...editedExercise, tempos_estimulo_segundos: [Number(e.target.value)]})} />
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold mx-1">OFF</span>
+                                  <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.tempos_descanso_segundos?.[0] || ''} onChange={(e) => setEditedExercise({...editedExercise, tempos_descanso_segundos: [Number(e.target.value)]})} />
+                                </div>
+                              </>
+                            );
+                          }
+
+                          // Default: Força
+                          return (
                             <>
                               <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
                                 <span className="text-xs text-[#92c9a8] uppercase font-bold">Séries</span>
-                                <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.series} onChange={(e) => setEditedExercise({...editedExercise, series: Number(e.target.value)})} />
+                                <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.series || ''} onChange={(e) => setEditedExercise({...editedExercise, series: Number(e.target.value)})} />
                               </div>
                               <div className="flex items-center gap-1 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
                                 <span className="text-xs text-[#92c9a8] uppercase font-bold mr-1">Reps</span>
-                                <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.repeticoes_min} onChange={(e) => setEditedExercise({...editedExercise, repeticoes_min: Number(e.target.value)})} />
+                                <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.repeticoes_min || ''} onChange={(e) => setEditedExercise({...editedExercise, repeticoes_min: Number(e.target.value)})} />
                                 <span className="text-[#326747]">-</span>
-                                <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.repeticoes_max} onChange={(e) => setEditedExercise({...editedExercise, repeticoes_max: Number(e.target.value)})} />
+                                <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.repeticoes_max || ''} onChange={(e) => setEditedExercise({...editedExercise, repeticoes_max: Number(e.target.value)})} />
                               </div>
                               <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-emerald-500/50">
                                 <span className="text-xs text-[#92c9a8] uppercase font-bold">Rest</span>
-                                <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.descanso_segundos} onChange={(e) => setEditedExercise({...editedExercise, descanso_segundos: Number(e.target.value)})} />
+                                <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={editedExercise.descanso_segundos || ''} onChange={(e) => setEditedExercise({...editedExercise, descanso_segundos: Number(e.target.value)})} />
                                 <span className="text-xs font-bold text-[#326747]">s</span>
                               </div>
                             </>
@@ -584,47 +644,71 @@ export default function WorkoutDetails() {
                         </div>
                       </div>
                     ) : (
-                      /* --- MODO VISUALIZAÇÃO --- */
+                      /* --- MODO VISUALIZAÇÃO CONDICIONAL POR TIPO --- */
                       <div className="flex flex-col lg:flex-row items-center gap-4 w-full lg:w-auto">
-                        {(() => {
-                           // Se tem tempo ou distância, é cardio. Fim de papo.
-                           const isCardio = ((ex.tempo_meta_minutos ?? 0) > 0) || ((ex.distancia_meta_km ?? 0) > 0);
-
-                           return (
-                              <div className="flex flex-wrap items-center gap-4 text-sm font-medium bg-[#193324] p-3 rounded-lg border border-[#326747] w-full lg:w-auto justify-center lg:justify-start">
-                                {isCardio ? (
-                                  <>
-                                    <div className="flex items-center gap-2 text-white">
-                                      <Clock size={16} className="text-emerald-400" />
-                                      <span>Meta: {ex.tempo_meta_minutos || 0} min</span>
-                                    </div>
-                                    <div className="w-px h-4 bg-[#326747] hidden lg:block"></div>
-                                    <div className="flex items-center gap-2 text-white">
-                                      <Activity size={16} className="text-emerald-400" />
-                                      <span>{ex.distancia_meta_km || 0} km</span>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <>
-                                    <div className="flex items-center gap-2 text-white">
-                                      <Activity size={16} className="text-emerald-400" />
-                                      <span>{ex.series} Séries</span>
-                                    </div>
-                                    <div className="w-px h-4 bg-[#326747] hidden lg:block"></div>
-                                    <div className="flex items-center gap-2 text-white">
-                                      <Dumbbell size={16} className="text-emerald-400" />
-                                      <span>{ex.repeticoes_min}{ex.repeticoes_min !== ex.repeticoes_max ? ` a ${ex.repeticoes_max}` : ''} Reps</span>
-                                    </div>
-                                    <div className="w-px h-4 bg-[#326747] hidden lg:block"></div>
-                                    <div className="flex items-center gap-2 text-white">
-                                      <Clock size={16} className="text-emerald-400" />
-                                      <span>{ex.descanso_segundos}s Rest</span>
-                                    </div>
-                                  </>
-                                )}
+                        <div className="flex flex-wrap items-center gap-4 text-sm font-medium bg-[#193324] p-3 rounded-lg border border-[#326747] w-full lg:w-auto justify-center lg:justify-start">
+                          
+                          {ex.tipo === 'cardio' ? (
+                            <>
+                              <div className="flex items-center gap-2 text-white">
+                                <Timer size={16} className="text-emerald-400" />
+                                <span>Meta: {ex.tempo_meta_minutos || 0} min</span>
                               </div>
-                           );
-                        })()}
+                              <div className="w-px h-4 bg-[#326747] hidden lg:block"></div>
+                              <div className="flex items-center gap-2 text-white">
+                                <Activity size={16} className="text-emerald-400" />
+                                <span>{ex.distancia_meta_km || 0} km</span>
+                              </div>
+                            </>
+                          ) : ex.tipo === 'isometrico' ? (
+                            <>
+                              <div className="flex items-center gap-2 text-white">
+                                <Activity size={16} className="text-emerald-400" />
+                                <span>{ex.series} Séries</span>
+                              </div>
+                              <div className="w-px h-4 bg-[#326747] hidden lg:block"></div>
+                              <div className="flex items-center gap-2 text-white">
+                                <Timer size={16} className="text-emerald-400" />
+                                <span>{ex.tempo_segundos}s (Isometria)</span>
+                              </div>
+                              <div className="w-px h-4 bg-[#326747] hidden lg:block"></div>
+                              <div className="flex items-center gap-2 text-white">
+                                <Clock size={16} className="text-emerald-400" />
+                                <span>{ex.descanso_segundos}s Rest</span>
+                              </div>
+                            </>
+                          ) : ex.tipo === 'hiit' ? (
+                            <>
+                              <div className="flex items-center gap-2 text-white">
+                                <Activity size={16} className="text-emerald-400" />
+                                <span>{ex.rounds} Rounds</span>
+                              </div>
+                              <div className="w-px h-4 bg-[#326747] hidden lg:block"></div>
+                              <div className="flex items-center gap-2 text-white">
+                                <Zap size={16} className="text-yellow-400" />
+                                <span>{ex.tempos_estimulo_segundos?.[0] || 0}s ON / {ex.tempos_descanso_segundos?.[0] || 0}s OFF</span>
+                              </div>
+                            </>
+                          ) : (
+                            // Default Visualização de Força
+                            <>
+                              <div className="flex items-center gap-2 text-white">
+                                <Activity size={16} className="text-emerald-400" />
+                                <span>{ex.series} Séries</span>
+                              </div>
+                              <div className="w-px h-4 bg-[#326747] hidden lg:block"></div>
+                              <div className="flex items-center gap-2 text-white">
+                                <Dumbbell size={16} className="text-emerald-400" />
+                                <span>{ex.repeticoes_min}{ex.repeticoes_min !== ex.repeticoes_max ? ` a ${ex.repeticoes_max}` : ''} Reps</span>
+                              </div>
+                              <div className="w-px h-4 bg-[#326747] hidden lg:block"></div>
+                              <div className="flex items-center gap-2 text-white">
+                                <Clock size={16} className="text-emerald-400" />
+                                <span>{ex.descanso_segundos}s Rest</span>
+                              </div>
+                            </>
+                          )}
+                        </div>
 
                         {/* Botões FIXOS */}
                         <div className="flex items-center gap-2 w-full lg:w-auto justify-center">
@@ -692,7 +776,7 @@ export default function WorkoutDetails() {
                         </div>
                       </div>
                     ) : (
-                      // 2. Define metas do exercício escolhido (Adaptado para Cardio ou Força)
+                      // 2. Define metas do exercício escolhido com base na categoria
                       <div className="flex flex-col gap-4">
                         <div className="flex justify-between items-center">
                           <h4 className="text-emerald-400 font-bold text-lg">Configurar: {selectedNewEx.nome}</h4>
@@ -700,20 +784,62 @@ export default function WorkoutDetails() {
                         </div>
                         
                         {(() => {
-                          const isCardioNew = selectedNewEx.categoria?.toLowerCase() === 'cardio';
+                          const catNova = selectedNewEx.categoria?.toLowerCase() || 'forca';
                           
-                          return isCardioNew ? (
-                            <div className="flex flex-wrap gap-3">
-                              <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
-                                <span className="text-xs text-[#92c9a8] uppercase font-bold">Tempo (min)</span>
-                                <input type="number" className="w-16 bg-transparent text-center text-white outline-none font-bold" value={newExForm.tempo_meta_minutos} onChange={(e) => setNewExForm({...newExForm, tempo_meta_minutos: Number(e.target.value)})} />
+                          if (catNova === 'cardio') {
+                            return (
+                              <div className="flex flex-wrap gap-3">
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Tempo (min)</span>
+                                  <input type="number" className="w-16 bg-transparent text-center text-white outline-none font-bold" value={newExForm.tempo_meta_minutos} onChange={(e) => setNewExForm({...newExForm, tempo_meta_minutos: Number(e.target.value)})} />
+                                </div>
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Dist. (km)</span>
+                                  <input type="number" step="0.1" className="w-16 bg-transparent text-center text-white outline-none font-bold" value={newExForm.distancia_meta_km} onChange={(e) => setNewExForm({...newExForm, distancia_meta_km: Number(e.target.value)})} />
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
-                                <span className="text-xs text-[#92c9a8] uppercase font-bold">Distância (km)</span>
-                                <input type="number" step="0.1" className="w-16 bg-transparent text-center text-white outline-none font-bold" value={newExForm.distancia_meta_km} onChange={(e) => setNewExForm({...newExForm, distancia_meta_km: Number(e.target.value)})} />
+                            );
+                          }
+
+                          if (catNova === 'isometrico') {
+                            return (
+                              <div className="flex flex-wrap gap-3">
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Séries</span>
+                                  <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={newExForm.series} onChange={(e) => setNewExForm({...newExForm, series: Number(e.target.value)})} />
+                                </div>
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Tempo (s)</span>
+                                  <input type="number" className="w-16 bg-transparent text-center text-white outline-none font-bold" value={newExForm.tempo_segundos} onChange={(e) => setNewExForm({...newExForm, tempo_segundos: Number(e.target.value)})} />
+                                </div>
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Rest</span>
+                                  <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={newExForm.descanso_segundos} onChange={(e) => setNewExForm({...newExForm, descanso_segundos: Number(e.target.value)})} />
+                                  <span className="text-xs font-bold text-[#326747]">s</span>
+                                </div>
                               </div>
-                            </div>
-                          ) : (
+                            );
+                          }
+
+                          if (catNova === 'hiit') {
+                            return (
+                              <div className="flex flex-wrap gap-3">
+                                <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold">Rounds</span>
+                                  <input type="number" className="w-12 bg-transparent text-center text-white outline-none font-bold" value={newExForm.rounds} onChange={(e) => setNewExForm({...newExForm, rounds: Number(e.target.value)})} />
+                                </div>
+                                <div className="flex items-center gap-1 bg-[#193324] p-2 rounded-lg border border-[#326747]">
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold mr-1">ON</span>
+                                  <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={newExForm.tempos_estimulo_segundos} onChange={(e) => setNewExForm({...newExForm, tempos_estimulo_segundos: Number(e.target.value)})} />
+                                  <span className="text-xs text-[#92c9a8] uppercase font-bold mx-1">OFF</span>
+                                  <input type="number" className="w-10 bg-transparent text-center text-white outline-none font-bold" value={newExForm.tempos_descanso_hiit} onChange={(e) => setNewExForm({...newExForm, tempos_descanso_hiit: Number(e.target.value)})} />
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          // Default for Força
+                          return (
                             <div className="flex flex-wrap gap-3">
                               <div className="flex items-center gap-2 bg-[#193324] p-2 rounded-lg border border-[#326747]">
                                 <span className="text-xs text-[#92c9a8] uppercase font-bold">Séries</span>
