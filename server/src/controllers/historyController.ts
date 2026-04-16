@@ -188,18 +188,18 @@ export const getWorkoutDetailsByDate = async (req: AuthRequest, res: Response) =
 
     // Ajustado para buscar de todas as tabelas filhas simultaneamente
     const { data: exercicios, error: execError } = await supabase
-      .from('historico_execucao_exercicio')
-      .select(`
-        id,
-        observacoes,
-        tipo,
-        exercicios (nome, grupo_pai, musculo_primario, categoria),
-        execucao_forca_detalhes (cargas_kg, repeticoes, descansos_segundos),
-        execucao_cardio_detalhes (tempo_real_minutos, distancia_real_km, inclinacao_real, bpm_medio_real, percepcao_esforco),
-        execucao_isometrico_detalhes (series_completadas, tempos_reais_segundos, descansos_segundos),
-        execucao_hiit_detalhes (rounds_completados, velocidades_estimulo_real, velocidades_descanso_real, tempos_estimulo_real, tempos_descanso_real)
-      `)
-      .eq('sessao_id', sessaoId);
+  .from('historico_execucao_exercicio')
+  .select(`
+    id,
+    observacoes,
+    tipo,
+    exercicios (nome, grupo_pai, musculo_primario, categoria),
+    execucao_forca_detalhes (cargas_kg, repeticoes, descansos_segundos),
+    execucao_cardio_detalhes (tempo_real_minutos, distancia_real_km),
+    execucao_isometrico_detalhes (series_completadas, tempos_reais_segundos, descansos_segundos),
+    execucao_hiit_detalhes (rounds_completados, velocidades_estimulo_real, velocidades_descanso_real, tempos_estimulo_real, tempos_descanso_real)
+  `)
+  .eq('sessao_id', sessaoId);
 
     if (execError) throw execError;
 
