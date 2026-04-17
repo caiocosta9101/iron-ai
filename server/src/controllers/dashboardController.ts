@@ -25,7 +25,6 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
       return res.json({ name: userName, suggestedSessionId: null, sessions: [], history: [] });
     }
 
-    // Busca os dias, os exercícios vinculados e OBRIGATORIAMENTE o exercicio_id para fazermos o match das cargas
     const { data: workoutDays, error: daysError } = await supabase
       .from('dias_treino')
       .select(`
@@ -42,7 +41,6 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
       return res.json({ name: userName, suggestedSessionId: null, sessions: [], history: [] });
     }
 
-    // Busca o histórico real de sessões e "atravessa" para a tabela filha de força
     const { data: history, error: historyError } = await supabase
       .from('historico_sessoes')
       .select(`
@@ -50,7 +48,8 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
         dias_treino ( nome ),
         historico_execucao_exercicio (
           exercicio_id,
-          execucao_forca_detalhes ( cargas_kg )
+          execucao_forca_detalhes ( cargas_kg ),
+          execucao_isometrico_detalhes ( tempos_reais_segundos )
         )
       `)
       .eq('usuario_id', userId)
@@ -62,46 +61,50 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
       console.error("Erro no Supabase ao buscar histórico:", historyError);
     }
 
-    // --- LÓGICA DE CÁLCULO DE CARGAS MÁXIMAS (PRs) ---
-    const maxLoadsMap: Record<string, number> = {};
+    const bestMetricsMap: Record<string, { maxVal: number, label: string }> = {};
 
     history?.forEach(sessao => {
       sessao.historico_execucao_exercicio?.forEach((exec: any) => {
         
-        // Dependendo de como a Foreign Key está configurada, o Supabase pode retornar um array ou objeto
-        // @ts-ignore - Ignorando erro de tipagem temporário caso o TS reclame da tabela aninhada
-        const detalhes = exec.execucao_forca_detalhes;
-        const cargas = Array.isArray(detalhes) ? detalhes[0]?.cargas_kg : detalhes?.cargas_kg;
+        const detForca = exec.execucao_forca_detalhes;
+        const cargas = detForca ? (Array.isArray(detForca) ? detForca[0]?.cargas_kg : detForca?.cargas_kg) : [];
         const cargasArray = cargas || [];
         
-        // Encontra a maior carga levantada
-        const maxInExec = cargasArray.length > 0 ? Math.max(...cargasArray) : 0;
-        
-        if (!maxLoadsMap[exec.exercicio_id] || maxInExec > maxLoadsMap[exec.exercicio_id]) {
-          maxLoadsMap[exec.exercicio_id] = maxInExec;
+        if (cargasArray.length > 0) {
+          const maxCarga = Math.max(...cargasArray);
+          if (!bestMetricsMap[exec.exercicio_id] || maxCarga > (bestMetricsMap[exec.exercicio_id]?.maxVal || 0)) {
+            bestMetricsMap[exec.exercicio_id] = { maxVal: maxCarga, label: `${maxCarga} kg` };
+          }
         }
+
+        const detIso = exec.execucao_isometrico_detalhes;
+        const tempos = detIso ? (Array.isArray(detIso) ? detIso[0]?.tempos_reais_segundos : detIso?.tempos_reais_segundos) : [];
+        const temposArray = tempos || [];
+
+        if (temposArray.length > 0) {
+          const maxTempo = Math.max(...temposArray);
+          if (!bestMetricsMap[exec.exercicio_id] || maxTempo > (bestMetricsMap[exec.exercicio_id]?.maxVal || 0)) {
+            bestMetricsMap[exec.exercicio_id] = { maxVal: maxTempo, label: `${maxTempo}s` };
+          }
+        }
+
       });
     });
 
-    // --- NOVA LÓGICA: O PRÓXIMO DA FILA (CARROSSEL) ---
     let suggestedSessionId = workoutDays[0].id; 
 
     if (history && history.length > 0) {
       
-      // 1. Procura a sessão mais recente que OBRIGATORIAMENTE faça parte dos dias da ficha atual.
       const ultimaSessaoDaFicha = history.find(sessao => 
         workoutDays.some(day => String(day.id) === String(sessao.dia_treino_id))
       );
 
-      // Se encontrou alguma sessão desta ficha específica que já foi feita...
       if (ultimaSessaoDaFicha) {
         
-        // 2. Acha a posição na lista (usando String para evitar erros de tipo)
         const ultimoIndex = workoutDays.findIndex(
           day => String(day.id) === String(ultimaSessaoDaFicha.dia_treino_id)
         );
 
-        // 3. Calcula o próximo e garante o carrossel (módulo)
         if (ultimoIndex !== -1) {
           const proximoIndex = (ultimoIndex + 1) % workoutDays.length;
           suggestedSessionId = workoutDays[proximoIndex].id;
@@ -109,15 +112,15 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Formata as sessões embutindo as cargas máximas reais de TODOS os exercícios do dia
     const formattedSessions = workoutDays.map(day => {
       const maxLoads = day.exercicios_treino?.map((et: any) => {
         const exName = et.exercicios?.nome || 'Exercício';
-        const pr = maxLoadsMap[et.exercicio_id];
+        
+        const prData = bestMetricsMap[et.exercicio_id];
         
         return {
           exercise: exName,
-          maxWeight: pr ? `${pr} kg` : '--' // Se não houver PR registrado, mostra '--'
+          maxWeight: prData ? prData.label : '--' 
         };
       }) || [];
       
@@ -126,13 +129,12 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
         programName: activeProgram.nome,
         name: day.nome,
         focus: day.foco,
-        estimatedTime: 60, // Pode ser dinâmico no futuro
+        estimatedTime: 60, 
         intensity: "Alta",
-        maxLoads: maxLoads // Substituímos loadSuggestions por maxLoads
+        maxLoads: maxLoads 
       };
     });
 
-    // Formata o histórico
     const formattedHistory = history?.map(h => {
       const dataObj = new Date(h.data_treino);
       return {
