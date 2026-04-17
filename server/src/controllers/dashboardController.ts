@@ -75,27 +75,27 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
       });
     });
 
-    // --- LÓGICA DO TREINO MAIS ATRASADO ---
-    const ultimasExecucoes: Record<string, number> = {};
-    workoutDays.forEach(day => { ultimasExecucoes[day.id] = 0; });
+    // --- NOVA LÓGICA: O PRÓXIMO DA FILA (CARROSSEL) ---
+    // Padrão de segurança: se não houver histórico, sugere o primeiro treino (ordem_dia mais baixo)
+    let suggestedSessionId = workoutDays[0].id; 
 
-    history?.forEach(sessao => {
-      const timestamp = new Date(sessao.data_treino).getTime();
-      if (timestamp > ultimasExecucoes[sessao.dia_treino_id]) {
-        ultimasExecucoes[sessao.dia_treino_id] = timestamp;
+    // Só calculamos o próximo se ele já tiver feito algum treino antes
+    if (history && history.length > 0) {
+      
+      // 1. Pega o ID do último treino salvo. (Como a query do history tem ORDER BY data_treino DESC, o índice 0 é sempre o mais recente)
+      const ultimoDiaTreinoId = history[0].dia_treino_id;
+
+      // 2. Encontra a posição (índice) desse último treino dentro da lista de dias da ficha atual.
+      // (workoutDays já vem ordenado do banco pelo ordem_dia ASC, então a fila está pronta)
+      const ultimoIndex = workoutDays.findIndex(day => day.id === ultimoDiaTreinoId);
+
+      // 3. Se achou o treino no array, pega o próximo. O operador % (módulo) garante que, se ele 
+      // fizer o último treino da ficha, a conta zera e ele volta pro índice 0 (Treino A).
+      if (ultimoIndex !== -1) {
+        const proximoIndex = (ultimoIndex + 1) % workoutDays.length;
+        suggestedSessionId = workoutDays[proximoIndex].id;
       }
-    });
-
-    let suggestedSessionId = workoutDays[0].id;
-    let tempoMaisAntigo = Infinity;
-
-    workoutDays.forEach(day => {
-      const tempo = ultimasExecucoes[day.id];
-      if (tempo < tempoMaisAntigo) {
-        tempoMaisAntigo = tempo;
-        suggestedSessionId = day.id;
-      }
-    });
+    }
 
     // Formata as sessões embutindo as cargas máximas reais de TODOS os exercícios do dia
     const formattedSessions = workoutDays.map(day => {
