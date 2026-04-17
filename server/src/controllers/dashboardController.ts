@@ -42,15 +42,15 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
       return res.json({ name: userName, suggestedSessionId: null, sessions: [], history: [] });
     }
 
-    // Busca o histórico real de sessões e as execuções vinculadas para calcular os PRs
-    const { data: history } = await supabase
+    // Busca o histórico real de sessões e "atravessa" para a tabela filha de força
+    const { data: history, error: historyError } = await supabase
       .from('historico_sessoes')
       .select(`
         id, dia_treino_id, data_treino, duracao_real_minutos,
         dias_treino ( nome ),
         historico_execucao_exercicio (
           exercicio_id,
-          cargas_kg
+          execucao_forca_detalhes ( cargas_kg )
         )
       `)
       .eq('usuario_id', userId)
@@ -58,17 +58,25 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
       .order('data_treino', { ascending: false })
       .limit(15); 
 
+    if (historyError) {
+      console.error("Erro no Supabase ao buscar histórico:", historyError);
+    }
+
     // --- LÓGICA DE CÁLCULO DE CARGAS MÁXIMAS (PRs) ---
     const maxLoadsMap: Record<string, number> = {};
 
     history?.forEach(sessao => {
-      // Como cargas_kg é um array numérico no PostgreSQL, precisamos varrê-lo
-      sessao.historico_execucao_exercicio?.forEach(exec => {
-        const cargas = exec.cargas_kg || [];
-        // Encontra a maior carga levantada nesta execução específica
-        const maxInExec = cargas.length > 0 ? Math.max(...cargas) : 0;
+      sessao.historico_execucao_exercicio?.forEach((exec: any) => {
         
-        // Atualiza o dicionário global se for o maior valor já visto para este exercício
+        // Dependendo de como a Foreign Key está configurada, o Supabase pode retornar um array ou objeto
+        // @ts-ignore - Ignorando erro de tipagem temporário caso o TS reclame da tabela aninhada
+        const detalhes = exec.execucao_forca_detalhes;
+        const cargas = Array.isArray(detalhes) ? detalhes[0]?.cargas_kg : detalhes?.cargas_kg;
+        const cargasArray = cargas || [];
+        
+        // Encontra a maior carga levantada
+        const maxInExec = cargasArray.length > 0 ? Math.max(...cargasArray) : 0;
+        
         if (!maxLoadsMap[exec.exercicio_id] || maxInExec > maxLoadsMap[exec.exercicio_id]) {
           maxLoadsMap[exec.exercicio_id] = maxInExec;
         }
@@ -76,24 +84,28 @@ export const getDashboardData = async (req: AuthRequest, res: Response) => {
     });
 
     // --- NOVA LÓGICA: O PRÓXIMO DA FILA (CARROSSEL) ---
-    // Padrão de segurança: se não houver histórico, sugere o primeiro treino (ordem_dia mais baixo)
     let suggestedSessionId = workoutDays[0].id; 
 
-    // Só calculamos o próximo se ele já tiver feito algum treino antes
     if (history && history.length > 0) {
       
-      // 1. Pega o ID do último treino salvo. (Como a query do history tem ORDER BY data_treino DESC, o índice 0 é sempre o mais recente)
-      const ultimoDiaTreinoId = history[0].dia_treino_id;
+      // 1. Procura a sessão mais recente que OBRIGATORIAMENTE faça parte dos dias da ficha atual.
+      const ultimaSessaoDaFicha = history.find(sessao => 
+        workoutDays.some(day => String(day.id) === String(sessao.dia_treino_id))
+      );
 
-      // 2. Encontra a posição (índice) desse último treino dentro da lista de dias da ficha atual.
-      // (workoutDays já vem ordenado do banco pelo ordem_dia ASC, então a fila está pronta)
-      const ultimoIndex = workoutDays.findIndex(day => day.id === ultimoDiaTreinoId);
+      // Se encontrou alguma sessão desta ficha específica que já foi feita...
+      if (ultimaSessaoDaFicha) {
+        
+        // 2. Acha a posição na lista (usando String para evitar erros de tipo)
+        const ultimoIndex = workoutDays.findIndex(
+          day => String(day.id) === String(ultimaSessaoDaFicha.dia_treino_id)
+        );
 
-      // 3. Se achou o treino no array, pega o próximo. O operador % (módulo) garante que, se ele 
-      // fizer o último treino da ficha, a conta zera e ele volta pro índice 0 (Treino A).
-      if (ultimoIndex !== -1) {
-        const proximoIndex = (ultimoIndex + 1) % workoutDays.length;
-        suggestedSessionId = workoutDays[proximoIndex].id;
+        // 3. Calcula o próximo e garante o carrossel (módulo)
+        if (ultimoIndex !== -1) {
+          const proximoIndex = (ultimoIndex + 1) % workoutDays.length;
+          suggestedSessionId = workoutDays[proximoIndex].id;
+        }
       }
     }
 
