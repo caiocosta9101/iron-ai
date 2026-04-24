@@ -223,13 +223,18 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
     for (const treino of treinosAtivos) {
       
       const dataHoje = new Date(hoje + 'T00:00:00');
-      const dataInicioTreino = new Date(treino.data_inicio + 'T00:00:00');
+      // Limpando a data para não gerar bugs com timestamps do Supabase
+      const dataInicioLimpa = treino.data_inicio.split('T')[0].split(' ')[0];
+      const dataInicioTreino = new Date(dataInicioLimpa + 'T00:00:00');
 
       const diffTime = Math.abs(dataHoje.getTime() - dataInicioTreino.getTime());
       const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
       
       const semanasDecorridas = Math.floor(diffDays / 7);
       const qtdJaGerada = contagemRelatorios[treino.id] || 0;
+
+      // --- LOG PARA DEBUG ---
+      console.log(`Treino ID: ${treino.id} | Dias: ${diffDays} | Semanas Decorridas: ${semanasDecorridas} | Já Gerados: ${qtdJaGerada}`);
 
       let tipoRelatorio: 'semanal' | 'final' | null = null;
       let semanaSendoAnalisada = 0;
@@ -243,33 +248,38 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
 
       if (tipoRelatorio) {
         
-        const dataInicioBusca = treino.data_inicio;
+        const dataInicioBusca = dataInicioLimpa;
         
-        const dataCorte = new Date(treino.data_inicio + 'T00:00:00');
+        const dataCorte = new Date(dataInicioLimpa + 'T00:00:00');
         dataCorte.setDate(dataCorte.getDate() + (semanaSendoAnalisada * 7));
         
         const dataFimBusca = tipoRelatorio === 'semanal' 
           ? dataCorte.toISOString().split('T')[0] 
           : hoje;
 
-        // INCLUINDO DADOS DE CARDIO NA QUERY
+        // INCLUINDO A BUSCA PELO NOME DO TREINO (dias_treino)
         const { data: sessoes, error: sessoesError } = await supabase
           .from('historico_sessoes')
           .select(`
             id,
+            data_treino,
             duracao_real_minutos,
+            dias_treino ( nome ),
             historico_execucao_exercicio (
               observacoes,
-              cargas_kg,
-              tempo_real_minutos,
-              distancia_real_km,
-              exercicios ( nome, categoria )
+              tipo,
+              exercicios ( nome, categoria, musculo_primario ),
+              execucao_forca_detalhes ( cargas_kg, repeticoes, descansos_segundos ),
+              execucao_cardio_detalhes ( tempo_real_minutos, distancia_real_km),
+              execucao_isometrico_detalhes ( tempos_reais_segundos, descansos_segundos ),
+              execucao_hiit_detalhes ( rounds_completados )
             )
           `)
           .eq('usuario_id', treino.usuario_id)
           .eq('finalizado', true)
           .gte('data_treino', dataInicioBusca)
-          .lte('data_treino', dataFimBusca);
+          .lte('data_treino', dataFimBusca)
+          .order('data_treino', { ascending: true });
 
         if (sessoesError) {
           console.error(`Erro ao buscar sessões do treino ${treino.id}:`, sessoesError);
@@ -278,125 +288,149 @@ export const generatePeriodicReports = async (req: Request, res: Response) => {
 
         const totalTreinosConcluidos = sessoes?.length || 0;
         let tempoTotal = 0;
-        const observacoesArray: string[] = [];
-        const evoluçãoCargasMap: Record<string, number[]> = {};
 
-        sessoes?.forEach(sessao => {
+        const dadosMapeados = (sessoes || []).map(sessao => {
           tempoTotal += sessao.duracao_real_minutos || 0;
+          
+          // Extraindo o nome do split de treino de forma segura
+          const nomeDiaTreino = sessao.dias_treino ? (Array.isArray(sessao.dias_treino) ? sessao.dias_treino[0]?.nome : (sessao.dias_treino as any).nome) : `Treino do dia ${sessao.data_treino}`;
 
-          sessao.historico_execucao_exercicio?.forEach((exec: any) => {
-            const nomeExercicio = Array.isArray(exec.exercicios) 
-                ? exec.exercicios[0]?.nome 
-                : exec.exercicios?.nome || 'Exercício Desconhecido';
-            
-            const categoria = Array.isArray(exec.exercicios) 
-                ? exec.exercicios[0]?.categoria 
-                : exec.exercicios?.categoria;
+          const exerciciosProcessados = (sessao.historico_execucao_exercicio || []).map((exec: any) => {
+            const exercicioRef = Array.isArray(exec.exercicios) ? exec.exercicios[0] : exec.exercicios;
+            const nomeExercicio = exercicioRef?.nome || 'Desconhecido';
+            const categoria = exercicioRef?.categoria || 'forca';
+            const musculo = exercicioRef?.musculo_primario || 'N/A';
 
-            // ==========================================
-            // LÓGICA DE CARDIO (Cálculo de Pace)
-            // ==========================================
-            let textoCardio = "";
-            if (categoria === 'cardio' && (exec.tempo_real_minutos || exec.distancia_real_km)) {
-              if (exec.tempo_real_minutos && exec.distancia_real_km) {
-                const paceDecimal = exec.tempo_real_minutos / exec.distancia_real_km;
-                const paceMinutos = Math.floor(paceDecimal);
-                const paceSegundos = Math.round((paceDecimal - paceMinutos) * 60);
-                const paceFormatado = `${paceMinutos}:${paceSegundos.toString().padStart(2, '0')}`;
-                textoCardio = ` [Desempenho: ${exec.distancia_real_km}km em ${exec.tempo_real_minutos}min | Pace: ${paceFormatado}/km]`;
-              } else {
-                textoCardio = ` [Desempenho: ${exec.tempo_real_minutos ? exec.tempo_real_minutos + 'min ' : ''}${exec.distancia_real_km ? exec.distancia_real_km + 'km' : ''}]`;
+            let detalhesProcessados = {};
+
+            const forcaData = Array.isArray(exec.execucao_forca_detalhes) ? exec.execucao_forca_detalhes[0] : exec.execucao_forca_detalhes;
+            const cardioData = Array.isArray(exec.execucao_cardio_detalhes) ? exec.execucao_cardio_detalhes[0] : exec.execucao_cardio_detalhes;
+            const isoData = Array.isArray(exec.execucao_isometrico_detalhes) ? exec.execucao_isometrico_detalhes[0] : exec.execucao_isometrico_detalhes;
+            const hiitData = Array.isArray(exec.execucao_hiit_detalhes) ? exec.execucao_hiit_detalhes[0] : exec.execucao_hiit_detalhes;
+
+            if (exec.tipo === 'forca' && forcaData) {
+              const cargas = forcaData.cargas_kg || [];
+              const reps = forcaData.repeticoes || [];
+              const descansos = forcaData.descansos_segundos || [];
+
+              const carga_maxima = cargas.length > 0 ? Math.max(...cargas) : 0;
+              let volume_total = 0;
+              for (let i = 0; i < Math.min(cargas.length, reps.length); i++) {
+                volume_total += (cargas[i] * reps[i]);
               }
+              const descanso_medio = descansos.length > 0 ? Math.round(descansos.reduce((a:number,b:number)=>a+b,0)/descansos.length) : 0;
+
+              // FIX: Formatando a string de séries (Ex: "12x12x10 reps / 39kg")
+              let series_formatadas = "N/A";
+              if (reps.length > 0) {
+                series_formatadas = `${reps.join('x')} reps / ${carga_maxima}kg`;
+              }
+
+              detalhesProcessados = { 
+                series_formatadas: series_formatadas,
+                carga_maxima_kg: carga_maxima, 
+                volume_total_kg: volume_total, 
+                descanso_medio_segundos: descanso_medio 
+              };
+            
+            } else if (exec.tipo === 'cardio' && cardioData) {
+              let paceFormatado = null;
+              if (cardioData.tempo_real_minutos && cardioData.distancia_real_km) {
+                 const paceDecimal = cardioData.tempo_real_minutos / cardioData.distancia_real_km;
+                 const pMin = Math.floor(paceDecimal);
+                 const pSeg = Math.round((paceDecimal - pMin) * 60);
+                 paceFormatado = `${pMin}:${pSeg.toString().padStart(2, '0')}`;
+              }
+              detalhesProcessados = { 
+                tempo_minutos: cardioData.tempo_real_minutos, 
+                distancia_km: cardioData.distancia_real_km, 
+                pace: paceFormatado 
+              };
+            
+            } else if (exec.tipo === 'isometrico' && isoData) {
+              const tempos = isoData.tempos_reais_segundos || [];
+              const tempo_total_tensao = tempos.reduce((a:number,b:number)=>a+b,0);
+              detalhesProcessados = { tempo_total_tensao_segundos: tempo_total_tensao };
+            
+            } else if (exec.tipo === 'hiit' && hiitData) {
+              detalhesProcessados = { rounds_completados: hiitData.rounds_completados };
             }
 
-            // Agrupa observações com o desempenho de cardio (se houver)
-            if (exec.observacoes && exec.observacoes.trim() !== '') {
-              observacoesArray.push(`- ${nomeExercicio}${textoCardio}: ${exec.observacoes}`);
-            } else if (textoCardio !== "") {
-              observacoesArray.push(`- ${nomeExercicio}${textoCardio}`);
-            }
-
-            // ==========================================
-            // LÓGICA DE FORÇA (Picos de Carga)
-            // ==========================================
-            if (categoria !== 'cardio' && exec.cargas_kg && exec.cargas_kg.length > 0) {
-              const cargaMaxDoDia = Math.max(...exec.cargas_kg);
-              if (!evoluçãoCargasMap[nomeExercicio]) evoluçãoCargasMap[nomeExercicio] = [];
-              evoluçãoCargasMap[nomeExercicio].push(cargaMaxDoDia);
-            }
+            return {
+              nome: nomeExercicio,
+              categoria: categoria,
+              musculo_primario: musculo,
+              tipo_tabela: exec.tipo,
+              feedback_aluno: exec.observacoes || "",
+              ...detalhesProcessados
+            };
           });
+
+          return { 
+            data: sessao.data_treino, 
+            nome_treino: nomeDiaTreino, // Enviando o agrupamento
+            duracao_sessao_minutos: sessao.duracao_real_minutos, 
+            exercicios: exerciciosProcessados 
+          };
         });
 
-        const tempoMedioTreino = totalTreinosConcluidos > 0 
-          ? Math.round(tempoTotal / totalTreinosConcluidos) + " minutos" 
-          : "Nenhum treino registrado no período.";
-
-        const observacoesUsuario = observacoesArray.length > 0 
-          ? observacoesArray.join('\n') 
-          : "Nenhuma dor, facilidade ou observação registrada pelo usuário.";
-
-        const destaquesCarga = Object.entries(evoluçãoCargasMap)
-          .map(([nome, cargas]) => {
-            if (cargas.length < 2) return null; 
-            const cargaInicial = cargas[0];
-            const cargaFinal = cargas[cargas.length - 1];
-            
-            if (cargaInicial === cargaFinal) return null; 
-            
-            const tendencia = cargaFinal > cargaInicial ? '📈 Evoluiu' : '📉 Regrediu';
-            return `- ${nome}: de ${cargaInicial}kg para ${cargaFinal}kg (${tendencia})`;
-          })
-          .filter(Boolean)
-          .join('\n') || "Cargas mantidas constantes ou dados insuficientes.";
+        const jsonParaIA = JSON.stringify(dadosMapeados);
+        const tempoMedioTreino = totalTreinosConcluidos > 0 ? Math.round(tempoTotal / totalTreinosConcluidos) + " minutos" : "0 minutos";
 
         let prompt = `
-          Atue como um Personal Trainer de Elite e Fisiologista do Exercício.
-          O aluno está executando o programa de treinamento "${treino.nome}".
-        `;
+Você é o "Treinador Virtual" da plataforma Iron AI, especialista sênior em análise de dados esportivos.
 
-        if (tipoRelatorio === 'semanal') {
-          prompt += `
-            OBJETIVO: Avaliar o progresso ACUMULADO até a Semana ${semanaSendoAnalisada} (Período analisado: ${dataInicioBusca} a ${dataFimBusca}) e fazer micro-ajustes para a próxima semana.
+## REGRAS ABSOLUTAS DE FORMATAÇÃO (CRÍTICO)
+1. Responda ESTRITAMENTE em Markdown limpo, sem saudações.
+2. NUNCA use sintaxe LaTeX (como cifrões ou a barra invertida times). Escreva as repetições apenas com a letra 'x' minúscula (exemplo: 12x12x10).
+3. Todas as tabelas devem usar a formatação padrão Markdown com quebras de linha claras.
+4. Na seção de Força, você deve calcular e mostrar a evolução em porcentagem baseada no 'volume_total_kg', mas NÃO imprima o volume total na tabela final. A tabela deve mostrar apenas a propriedade 'series_formatadas'.
 
-            DADOS DE TODO O HISTÓRICO ATÉ O MOMENTO:
-            - Total de treinos concluídos no ciclo: ${totalTreinosConcluidos}
-            - Tempo médio geral de treino: ${tempoMedioTreino}
-            - Evolução/Estagnação de Cargas (Comparativo desde o Dia 1 até hoje): 
-            ${destaquesCarga}
-            - Histórico completo de Feedback do Aluno: 
-            ${observacoesUsuario}
+## DADOS DO CICLO
+- Período: ${dataInicioBusca} a ${dataFimBusca}
+- Treinos concluídos: ${totalTreinosConcluidos}
+- Tempo médio: ${tempoMedioTreino}
 
-            DIRETRIZES DO RELATÓRIO (Formato Markdown):
-            1. Análise de Consistência: Avalie o volume total acumulado.
-            2. Análise de Cargas e Cardio: Avalie a progressão de cargas e o Pace/Tempo nos exercícios aeróbicos.
-            3. Resposta ao Feedback: Adapte baseado nas dores ou facilidades acumuladas.
-            4. Meta da Próxima Semana: Dê uma instrução clara e única para os próximos 7 dias.
-            
-            Tom: Direto, técnico e profissional. Evite introduções genéricas.
-          `;
-        } else if (tipoRelatorio === 'final') {
-          const totalSemanasDoCiclo = Math.floor(diffDays / 7);
-          prompt += `
-            OBJETIVO: Fechamento da periodização completa de ${totalSemanasDoCiclo} semanas (Período: ${treino.data_inicio} a ${hoje}) e diretrizes para o próximo ciclo.
+## JSON DE EXECUÇÃO:
+${jsonParaIA}
 
-            DADOS GERAIS DO CICLO COMPLETO:
-            - Total de treinos realizados no período: ${totalTreinosConcluidos}
-            - Evolução Geral de Cargas desde o dia 1: 
-            ${destaquesCarga}
-            - Dificuldades recorrentes relatadas no ciclo e Desempenho Aeróbico: 
-            ${observacoesUsuario}
+## ESTRUTURA OBRIGATÓRIA DO RELATÓRIO
 
-            DIRETRIZES DO RELATÓRIO FINAL (Formato Markdown):
-            
-            ## 📊 Raio-X da Periodização
-            Balanço técnico do que foi alcançado com base nos treinos concluídos e cargas.
+### 1. Diagnóstico Geral
+Parágrafo único com o panorama do período: tendência geral de progressão, ponto mais forte e principal ponto de atenção.
 
-            ## ⚠️ Pontos de Atenção
-            Liste falhas mecânicas ou estagnações notadas nos dados e como corrigir.
+### 2. Evolução por Treino (Hipertrofia)
+Agrupe os exercícios de força pelo 'nome_treino' fornecido no JSON (Ex: Treino A, Treino B). Para cada treino diferente, crie um subtítulo e gere uma tabela comparando a primeira data que o exercício apareceu com a última. Formato exato:
 
-            ## 🎯 Prescrição para o Próximo Ciclo (CRÍTICO)
-            Determine O QUE DEVE SER FEITO na próxima periodização com base nos resultados. Seja específico.
-          `;
+#### [Nome do Treino]
+| Exercício | Semana Inicial (Data) | Semana Final (Data) | Var. Volume |
+|-----------|-----------------------|---------------------|-------------|
+| Nome | [Valor exato de series_formatadas] | [Valor exato de series_formatadas] | +X% |
+
+### 3. Condicionamento Cardiovascular
+| Data | Distância | Duração | Pace (min/km) |
+Adicione um parágrafo "Tendência:" apontando evolução ou estagnação baseada no pace.
+
+### 4. Condicionamento Específico (HIIT/Isometria)
+Avalie a progressão de tempo sob tensão ou rounds, se houver dados.
+
+### 5. Análise por Grupamento Muscular
+Liste o status dos músculos em bullet points com base no volume/carga:
+- **Em progressão:** (Justificativa)
+- **Próximo do teto:** (Justificativa)
+- **Atenção técnica:** (Justificativa)
+
+### 6. Anomalias e Inconsistências
+Liste em bullets qualquer queda drástica de carga/volume, durações absurdas ou dados faltando, com sua hipótese.
+
+### 7. Análise Comportamental
+Avalie a consistência, impacto de feedbacks registrados ('feedback_aluno') como jejum/dores, e variações de tempo de descanso.
+
+### 8. Micro-ajustes para a Próxima Ficha
+Lista numerada (1, 2, 3) com diretrizes claras de aumento de carga exata ou ajuste de técnica para os exercícios que estagnaram ou progrediram muito.`;
+
+        if (tipoRelatorio === 'final') {
+          prompt += `\n\n### 9. Prescrição para o Próximo Ciclo\nDetermine o foco para a próxima periodização.`;
         }
 
         const result = await model.generateContent(prompt);

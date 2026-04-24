@@ -6,7 +6,9 @@ import { TrendingUp, Clock, Activity, Dumbbell, Layers, Bot, X, Timer } from 'lu
 import api from '../services/api';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import ReactMarkdown from 'react-markdown'; 
+
+// --- IMPORTAÇÃO DO COMPONENTE DE FORMATAÇÃO ---
+import { ReportRenderer } from '../components/ReportRenderer';
 
 export function Progress() {
   const [stats, setStats] = useState({ totalTreinos: 0, tempoTotalHoras: 0 });
@@ -112,13 +114,11 @@ export function Progress() {
   const forceStats = muscleStats.filter(grupo => grupo.grupo_pai?.trim().toLowerCase() !== 'cardio');
   const cardioStatsRaw = muscleStats.filter(grupo => grupo.grupo_pai?.trim().toLowerCase() === 'cardio');
 
-  // Calcula os totais do cardio varrendo os exercícios dentro do grupo
   let totalCardioMinutos = 0;
   let totalCardioKm = 0;
 
   cardioStatsRaw.forEach(grupo => {
     grupo.exercicios?.forEach((ex: any) => {
-        // Tenta pegar os valores, garantindo que sejam convertidos para número se existirem
         const minutos = ex.tempoRealMinutos || ex.tempo_real_minutos || 0;
         const km = ex.distanciaRealKm || ex.distancia_real_km || 0;
         
@@ -127,11 +127,10 @@ export function Progress() {
     });
   });
 
-
   return (
     <div className="p-6 text-white max-w-7xl mx-auto space-y-6">
       
-      {/* --- CABEÇALHO COM BOTÃO DA IA --- */}
+      {/* --- CABEÇALHO --- */}
       <div className="flex justify-between items-center mb-1">
         <div>
           <h1 className="text-2xl font-bold mb-1">Seu Progresso</h1>
@@ -263,7 +262,7 @@ export function Progress() {
         </div>
       </div>
 
-      {/* --- NOVO: PAINEL DE CARDIO (Últimos 7 dias) --- */}
+      {/* --- PAINEL DE CARDIO --- */}
       {cardioStatsRaw.length > 0 && (
         <div className="pt-2">
           <div className="flex items-center gap-2 mb-4">
@@ -295,7 +294,7 @@ export function Progress() {
         </div>
       )}
 
-      {/* --- VOLUME SEMANAL POR GRUPO MUSCULAR (FORÇA) --- */}
+      {/* --- VOLUME SEMANAL POR GRUPO MUSCULAR --- */}
       <div className="pt-2">
         <div className="flex items-center gap-2 mb-4">
           <Layers className="w-5 h-5 text-emerald-500" />
@@ -382,14 +381,12 @@ export function Progress() {
                 <div className="text-center text-gray-500 mt-10 flex flex-col items-center gap-3">
                   <Activity className="w-10 h-10 opacity-20" />
                   <p>Você ainda não possui relatórios gerados.</p>
-                  <p className="text-sm">Eles aparecerão aqui automaticamente após 7 dias de treino.</p>
                 </div>
               ) : (
                 <div className="space-y-6">
                   {relatorios.map((relatorio) => (
                     <div key={relatorio.id} className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                       
-                      {/* Cabeçalho do Card de Relatório */}
                       <div className="flex justify-between items-start mb-4">
                         <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full ${
                           relatorio.tipo === 'final' 
@@ -409,32 +406,9 @@ export function Progress() {
                       </div>
                       
                       {/* ========================================= */}
-                      {/* RENDERIZADOR DO MARKDOWN COM TAILWIND CSS */}
+                      {/* CHAMADA DO COMPONENTE DE FORMATAÇÃO IA    */}
                       {/* ========================================= */}
-                      <div className="text-gray-300 text-sm">
-                        <ReactMarkdown
-                          components={{
-                            // Título Nível 1 (Se a IA gerar #)
-                            h1: ({node, ...props}) => <h1 className="text-xl font-bold text-white mt-6 mb-3" {...props} />,
-                            // Título Nível 2 (Ex: ## ⚠️ Pontos de Atenção)
-                            h2: ({node, ...props}) => <h2 className="text-lg font-bold text-emerald-400 mt-6 mb-2 border-b border-gray-700 pb-1" {...props} />,
-                            // Título Nível 3 (Ex: ### Meta da Próxima Semana)
-                            h3: ({node, ...props}) => <h3 className="text-base font-bold text-gray-200 mt-4 mb-2" {...props} />,
-                            // Parágrafos Normais
-                            p: ({node, ...props}) => <p className="mb-3 leading-relaxed" {...props} />,
-                            // Listas com Bolinhas (Ex: - Análise de Cargas...)
-                            ul: ({node, ...props}) => <ul className="list-disc list-inside mb-4 space-y-1 marker:text-emerald-500" {...props} />,
-                            // Listas Numeradas (Ex: 1. Fazer isso...)
-                            ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-4 space-y-1 marker:text-emerald-500" {...props} />,
-                            // Itens da Lista
-                            li: ({node, ...props}) => <li className="text-gray-300 leading-relaxed ml-2" {...props} />,
-                            // Textos em Negrito (Ex: **Muito Importante**)
-                            strong: ({node, ...props}) => <strong className="font-bold text-white" {...props} />,
-                          }}
-                        >
-                          {relatorio.conteudo}
-                        </ReactMarkdown>
-                      </div>
+                      <ReportRenderer content={relatorio.conteudo} />
 
                     </div>
                   ))}
